@@ -1,0 +1,55 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "speaksql"
+version = "0.1.0"
+description = "Speak once. Query any dialect. NL-to-SQL transpiled across Postgres, MySQL, Snowflake, BigQuery, SQL Server, Databricks, DuckDB, and SAP HANA."
+readme = "README.md"
+license = { text = "AGPL-3.0-or-later" }
+requires-python = ">=3.11"
+authors = [{ name = "Royce" }]
+keywords = ["sql", "transpile", "dialect", "nl-to-sql", "postgres", "snowflake", "bigquery", "databricks", "duckdb", "hana"]
+classifiers = [
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Database",
+]
+dependencies = [
+  "sqlglot>=23.0",
+  "click>=8.1",
+  "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+service = ["fastapi>=0.110", "uvicorn[standard]>=0.30"]
+dev = [
+  "pytest>=8.0",
+  "pytest-cov>=5.0",
+  "ruff>=0.5",
+  "mypy>=1.10",
+]
+
+[project.scripts]
+speaksql = "speaksql.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/rollroyces/speaksql"
+Issues = "https://github.com/rollroyces/speaksql/issues"
+Repository = "https://github.com/rollroyces/speaksql"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/speaksql"]
+
+[tool.ruff]
+line-length = 100
+src = ["src/speaksql", "tests"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

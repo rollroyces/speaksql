@@ -1,0 +1,10 @@
+# SpeakSQL License
+
+This project is dual-licensed:
+
+- **AGPL-3.0-or-later** for open-source use (see LICENSE-AGPL).
+- **Commercial license** available — contact Royce for terms.
+
+The AGPL license preserves the open-source spirit while preventing
+proprietary forks; commercial licensing funds ongoing development of
+the dialect-specific overrides and verification matrix.
