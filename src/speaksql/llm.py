@@ -292,38 +292,57 @@ def make_provider() -> LLMProvider:
     return MockProvider()
 
 
-def _build_messages(question: str) -> list[dict[str, str]]:
+def _build_messages(
+    question: str, schema_hint: str | None = None
+) -> list[dict[str, str]]:
     """Assemble the OpenAI-shaped message list for the LLM call.
 
     System prompt + few-shot examples + the user's question. Kept in a
     helper so complete() and stream() stay in lockstep.
+
+    If `schema_hint` is provided, it is appended to the system prompt as
+    a "Schema context" block — that's how FK-aware planning flows into
+    the LLM even when the rule layer missed.
     """
+    system = SYSTEM_PROMPT
+    if schema_hint:
+        system += "\n\n## Schema context\n" + schema_hint
     return [
-        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "system", "content": system},
         *({"role": "user", "content": q} for q, _ in FEW_SHOT_EXAMPLES),
         *({"role": "assistant", "content": sql} for _, sql in FEW_SHOT_EXAMPLES),
         {"role": "user", "content": question},
     ]
 
 
-def llm_to_canonical(question: str, provider: LLMProvider | None = None) -> str:
+def llm_to_canonical(
+    question: str,
+    provider: LLMProvider | None = None,
+    schema_hint: str | None = None,
+) -> str:
     """Translate a natural-language question into canonical ANSI SQL via LLM.
 
     If `provider` is None, `make_provider()` is called — which reads env
     vars and returns either a real OpenAI-compatible client or a
     `MockProvider` (depending on what's configured).
 
+    Pass `schema_hint` (typically `SchemaHint.to_prompt_section()`) to
+    inject a schema summary into the system prompt — useful when the
+    FK-aware planner has already pinned down which tables are relevant.
+
     The returned string is whatever the model produced; we strip leading
     whitespace and trailing whitespace but don't try to parse/validate.
     Validation happens downstream in `plan()`.
     """
     provider = provider or make_provider()
-    raw = provider.complete(_build_messages(question))
+    raw = provider.complete(_build_messages(question, schema_hint=schema_hint))
     return raw.strip()
 
 
 def llm_to_canonical_streaming(
-    question: str, provider: LLMProvider | None = None
+    question: str,
+    provider: LLMProvider | None = None,
+    schema_hint: str | None = None,
 ) -> Iterable[str]:
     """Streaming variant of `llm_to_canonical`.
 
@@ -333,7 +352,7 @@ def llm_to_canonical_streaming(
     exception propagates out of the generator at iteration time.
     """
     provider = provider or make_provider()
-    return provider.stream(_build_messages(question))
+    return provider.stream(_build_messages(question, schema_hint=schema_hint))
 
 
 __all__ = [

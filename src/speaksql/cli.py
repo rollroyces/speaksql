@@ -63,7 +63,8 @@ def main() -> None:
     default=None,
     help=(
         "For backends that take a connection string / file path "
-        "(sqlite, duckdb), point at this path instead of :memory:."
+        "(sqlite, duckdb), point at this path instead of :memory:. "
+        "When set, also enables FK-aware SQL generation against the schema."
     ),
 )
 def ask(
@@ -83,7 +84,13 @@ def ask(
     if not question:
         raise click.UsageError("No question provided (arg or stdin).")
 
-    canonical = question if is_sql else nl_to_canonical(question)
+    # FK-aware SQL generation: if --db-path is given AND we're in NL
+    # mode, introspect the schema + FKs and pass them to nl_to_canonical.
+    schema = None
+    if db_path is not None and not is_sql:
+        schema = _introspect_for_path(db_path)
+
+    canonical = question if is_sql else nl_to_canonical(question, schema=schema)
     targets: Iterable[str] = dialects or sorted(SUPPORTED_DIALECTS)
     out = transpile(canonical, targets)
 
@@ -103,6 +110,34 @@ def ask(
         click.echo(f"=== Execution on {execute_on} ===")
         result = _maybe_execute(execute_on, out, dialects, db_path)
         click.echo(json.dumps(result, indent=2, default=_json_default))
+
+
+def _introspect_for_path(db_path: str):
+    """Best-effort introspect for CLI's --db-path. Returns None on failure.
+
+    Used to enable FK-aware SQL generation: when --db-path points at a
+    SQLite or DuckDB file, we read its schema + declared FKs and pass
+    them to nl_to_canonical as `schema=`.
+    """
+    from pathlib import Path
+
+    from speaksql.backends import backend_for
+
+    p = Path(db_path)
+    if not p.exists():
+        return None
+    b = "duckdb" if p.suffix.lower() == ".duckdb" else "sqlite"
+    try:
+        be = backend_for(b, path=str(p))
+        schema = be.introspect()
+        fks = be.foreign_keys()
+        be.close()
+        return schema.with_foreign_keys(fks)
+    except (OSError, RuntimeError, ValueError, TypeError):
+        # Driver missing, connection refused, malformed file — any of
+        # these means the FK-aware path can't proceed. Return None and
+        # let the CLI fall back to the default schema-agnostic rules.
+        return None
 
 
 def _json_default(obj: object) -> str:

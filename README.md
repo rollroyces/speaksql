@@ -53,8 +53,9 @@ copy-paste and no dialect-specific debugging.*
 - 🛠️ **Three surfaces** — Python library, CLI, and FastAPI service from one
   install.
 - 🔌 **Live backends** — actually execute transpiled SQL against SQLite,
-  DuckDB, Postgres, Snowflake, or BigQuery. Real FK constraints are
-  read from the database and used to build JOIN graphs.
+  DuckDB, Postgres, MySQL, SQL Server, Snowflake, BigQuery, or Spark/
+  Databricks. Real FK constraints are read from the database and used
+  to build JOIN graphs.
 - 🧠 **LLM planner** — rule-based by default; opt-in via
   `SPEAKSQL_USE_LLM=1` for any OpenAI-compatible endpoint (no SDK).
 - 🔍 **Semantic diff** — compare two SQL strings and see *why* they're
@@ -62,7 +63,7 @@ copy-paste and no dialect-specific debugging.*
   type aliases, structural). Not just textual.
 - 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
   + FK metadata.
-- ✅ **139 tests passing** — unit + integration, including live SQLite
+- ✅ **159 tests passing** — unit + integration, including live SQLite
   and DuckDB roundtrips, fake-server SSE streaming, and WebSocket
   end-to-end frames.
 - 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
@@ -88,7 +89,8 @@ pip install speaksql[mssql]     # pymssql driver (SQL Server)
 pip install speaksql[duckdb]    # in-process DuckDB driver (great for tests)
 pip install speaksql[snowflake] # snowflake-connector-python
 pip install speaksql[bigquery]  # google-cloud-bigquery
-pip install speaksql[backends]  # all six drivers above
+pip install speaksql[spark]     # PySpark (heavy; JVM required)
+pip install speaksql[backends]  # all seven drivers above
 pip install speaksql[dev]       # pytest + ruff + mypy
 ```
 
@@ -248,7 +250,7 @@ for clients that want to show partial results as the LLM streams.
 |---|---|---|
 | `/v1/ask` | POST | Transpile SQL or NL to one or more dialects |
 | `/v1/ask` | WebSocket | Streaming variant — receives `llm_token` / `canonical` / `transpile` / `done` frames |
-| `/v1/execute` | POST | Transpile + execute on a live backend (sqlite/duckdb/postgres/mysql/mssql/snowflake/bigquery) |
+| `/v1/execute` | POST | Transpile + execute on a live backend (sqlite/duckdb/postgres/mysql/mssql/snowflake/bigquery/spark) |
 | `/v1/diff` | POST | Compare two SQL strings semantically; returns `{identical, differences}` |
 | `/v1/graph` | POST | Build a JOIN graph from a SQLite/DuckDB file; returns JSON + HTML |
 | `/v1/dialects` | GET | List supported dialect identifiers |
@@ -267,7 +269,8 @@ verify the emitted SQL against a real engine:
 | SQL Server | `pip install speaksql[mssql]` | `backend_for("mssql", server=..., user=..., password=..., database=...)` |
 | Snowflake | `pip install speaksql[snowflake]` | `backend_for("snowflake", user=..., password=..., account=..., warehouse=...)` |
 | BigQuery | `pip install speaksql[bigquery]` | `backend_for("bigquery", project=...)` |
-| All six | `pip install speaksql[backends]` | — |
+| Spark / Databricks | `pip install speaksql[spark]` | `backend_for("spark", master="local[*]", app_name="...")` |
+| All seven | `pip install speaksql[backends]` | — |
 
 Every backend implements the same `Backend` protocol: `introspect()` returns a
 `SchemaList`, `execute(sql)` returns `list[tuple]`, `close()` shuts the
@@ -291,6 +294,79 @@ for t in schema.tables:
     print(f"{t.schema}.{t.name}: {[c.name for c in t.columns]}")
 # main.events: ['id', 'amount']
 ```
+
+### FK-aware SQL generation
+
+When you give SpeakSQL a real schema (via `Backend.introspect()` + `foreign_keys()`),
+the rule-based planner becomes **schema-aware**: it tokenizes the question,
+matches tokens against table and column names, uses the FK metadata to pull
+in parent tables, and emits canonical SQL with the right JOINs.
+
+```mermaid
+flowchart LR
+    Q[Question<br/>"monthly orders by user"]:::input
+    S[Schema<br/>+ FK metadata]:::input
+    P[plan_for_question]:::core
+    H[SchemaHint<br/>tables, columns, joins]:::hint
+    R[Rule patterns<br/>or LLM prompt]:::emit
+    SQL[Canonical SQL<br/>+ JOIN clause]:::out
+
+    Q --> P
+    S --> P
+    P --> H
+    H --> R
+    R --> SQL
+
+    classDef input fill:#fef3c7,stroke:#92400e
+    classDef core fill:#dbeafe,stroke:#1e3a8a
+    classDef hint fill:#dcfce7,stroke:#166534
+    classDef emit fill:#f3e8ff,stroke:#581c87
+    classDef out fill:#fce7f3,stroke:#9d174d
+```
+
+```python
+from speaksql.backends import backend_for
+from speaksql.schema_aware import plan_for_question, joins_to_sql
+
+be = backend_for("duckdb", path="./analytics.duckdb")
+schema = be.introspect().with_foreign_keys(be.foreign_keys())
+be.close()
+
+hint = plan_for_question("monthly orders by user", schema)
+print(hint.to_prompt_section())
+# Tables:
+#   orders ((no columns matched))
+#   users ((no columns matched))
+# Joins:
+#   orders.user_id → users.id
+
+print(joins_to_sql(hint.joins))
+# JOIN users ON orders.user_id = users.id
+```
+
+`nl_to_canonical()` accepts the schema too:
+
+```python
+from speaksql.nl import nl_to_canonical
+
+sql = nl_to_canonical("count of orders per user", schema=schema)
+# SELECT "user", COUNT(orders) AS cnt
+# FROM orders
+# JOIN users ON orders.user_id = users.id
+# GROUP BY "user"
+```
+
+The CLI auto-discovers FKs when you pass `--db-path`:
+
+```bash
+speaksql ask -d duckdb --db-path ./analytics.duckdb \
+  "count of orders per user"
+# → emits a SELECT with FROM orders JOIN users ON orders.user_id = users.id
+```
+
+When the question is too ambiguous for the rule layer, the **same** schema
+hint is injected into the LLM system prompt so the LLM also benefits
+from the FK metadata.
 
 ### LLM planner
 
@@ -587,7 +663,7 @@ curl -X POST http://localhost:8000/v1/diff \
 | SQL Server | `tsql` | `mssql`, `sqlserver` | ✅ native + backend | ✅ `sys.foreign_keys` |
 | Snowflake | `snowflake` | — | ✅ native + backend | ✅ informational only — often empty |
 | BigQuery | `bigquery` | — | ✅ native + backend | ❌ no FK concept in BigQuery DDL |
-| Databricks / Spark | `spark` | `databricks` | ✅ native (transpile only) | n/a (no Spark driver shipped) |
+| Databricks / Spark | `spark` | `databricks` | ✅ native + backend | ❌ Spark catalog doesn't expose FK metadata |
 | DuckDB | `duckdb` | — | ✅ native + backend | ✅ `duckdb_constraints()` |
 | SQLite | `sqlite` | — | ✅ native + backend (bundled) | ✅ `PRAGMA foreign_key_list` |
 | SAP HANA | `hana` | `saphana` | ✅ vendor (see [HANA dialect](#sap-hana-hana)) | ❌ not yet exposed |
@@ -691,7 +767,7 @@ Three orthogonal tools complement the transpile pipeline:
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 139 tests
+uv run pytest            # 159 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -706,15 +782,17 @@ speaksql/
 │   ├── introspect.py          # SchemaList + ForeignKeyInfo
 │   ├── nl.py                  # rule-based NL → canonical SQL (with LLM fallback)
 │   ├── llm.py                 # LLMProvider, MockProvider, OpenAICompatibleProvider
+│   ├── schema_aware.py        # FK-aware planner (plan_for_question, joins_to_sql)
 │   ├── diff.py                # semantic_diff + DiffEntry
 │   ├── graph.py               # JOIN graph builder + HTML renderer
 │   ├── cli.py                 # `speaksql` command (ask, diff, graph, dialects)
 │   ├── service.py             # FastAPI app (optional)
 │   ├── exceptions.py
 │   ├── backends/              # per-dialect DB drivers (SQLite, DuckDB,
-│   │                          #   Postgres, Snowflake, BigQuery)
+│   │                          #   Postgres, MySQL, MSSQL, Snowflake,
+│   │                          #   BigQuery, Spark/Databricks)
 │   └── dialects/              # vendor dialects (hana.py)
-├── tests/                     # 139 tests across 24 files
+├── tests/                     # 159 tests across 26 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   └── llm_eval/              # eval harness + eval_set.jsonl
@@ -750,13 +828,18 @@ All roadmap items from the original v0.1 launch are shipped:
 - [x] ~~WebSocket `/v1/ask` endpoint with partial-response streaming~~ —
       shipped; emits `llm_token` / `canonical` / `transpile` / `done`
       frames incrementally
+- [x] ~~Databricks / Spark backend (currently transpile-only)~~ —
+      shipped; PySpark driver with `master="local[*]"` for testing or
+      `sc://...databricks.com:443/...` for Databricks Connect
+- [x] ~~FK-aware SQL generation (use graph knowledge to choose joins)~~
+      — shipped via `speaksql.schema_aware.plan_for_question()`;
+      auto-enabled in CLI when `--db-path` is given
 
 New ideas being considered:
 
-- [ ] Databricks / Spark backend (currently transpile-only)
 - [ ] Custom Snowflake / BigQuery / HANA vendor overrides (functions,
       types, syntactic idioms)
-- [ ] FK-aware SQL generation (use graph knowledge to choose joins)
+- [ ] Multi-hop JOIN path planning (currently only direct edges)
 
 ---
 
@@ -779,5 +862,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 139 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 159 tests green</sub>
 </p>

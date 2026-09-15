@@ -104,6 +104,21 @@ def backend_for(dialect: str, **kwargs: Any) -> Backend:
             ) from e
         return DuckDBBackend(**kwargs)
 
+    if d in ("spark", "databricks"):
+        try:
+            from .spark_backend import SparkBackend
+        except ImportError as e:
+            raise BackendError(
+                "spark backend requires 'pyspark': pip install speaksql[spark]"
+            ) from e
+        try:
+            import pyspark  # noqa: F401
+        except ImportError as e:
+            raise BackendError(
+                "spark backend requires 'pyspark': pip install speaksql[spark]"
+            ) from e
+        return SparkBackend(**kwargs)
+
     if d == "snowflake":
         try:
             from .snowflake_backend import SnowflakeBackend
