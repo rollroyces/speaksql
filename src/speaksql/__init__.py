@@ -23,6 +23,7 @@ try:
         OpenAICompatibleProvider,
         is_llm_enabled,
         llm_to_canonical,
+        llm_to_canonical_streaming,
         make_provider,
     )
 except ImportError:  # pragma: no cover
@@ -49,6 +50,7 @@ __all__ = [
     "introspect",
     "is_llm_enabled",
     "llm_to_canonical",
+    "llm_to_canonical_streaming",
     "make_provider",
     "plan",
     "render_html",

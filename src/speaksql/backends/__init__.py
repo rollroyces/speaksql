@@ -59,6 +59,36 @@ def backend_for(dialect: str, **kwargs: Any) -> Backend:
             ) from e
         return PostgresBackend(**kwargs)
 
+    if d == "mysql":
+        try:
+            from .mysql_backend import MySQLBackend
+        except ImportError as e:
+            raise BackendError(
+                "mysql backend requires 'pymysql': pip install speaksql[mysql]"
+            ) from e
+        try:
+            import pymysql  # noqa: F401
+        except ImportError as e:
+            raise BackendError(
+                "mysql backend requires 'pymysql': pip install speaksql[mysql]"
+            ) from e
+        return MySQLBackend(**kwargs)
+
+    if d in ("mssql", "sqlserver"):
+        try:
+            from .mssql_backend import MSSQLBackend
+        except ImportError as e:
+            raise BackendError(
+                "mssql backend requires 'pymssql': pip install speaksql[mssql]"
+            ) from e
+        try:
+            import pymssql  # noqa: F401
+        except ImportError as e:
+            raise BackendError(
+                "mssql backend requires 'pymssql': pip install speaksql[mssql]"
+            ) from e
+        return MSSQLBackend(**kwargs)
+
     if d == "duckdb":
         try:
             from .duckdb_backend import DuckDBBackend

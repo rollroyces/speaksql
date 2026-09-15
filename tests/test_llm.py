@@ -148,13 +148,97 @@ class _Handler(BaseHTTPRequestHandler):
 
 @pytest.fixture
 def fake_openai_server():
-    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    # SO_REUSEADDR prevents TIME_WAIT collisions when multiple tests spin
+    # up + tear down a server on a kernel-assigned port in quick succession.
+    class ReuseAddrHTTPServer(HTTPServer):
+        allow_reuse_address = True
+
+    server = ReuseAddrHTTPServer(("127.0.0.1", 0), _Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     _Handler.received_requests = []
     yield server
     server.shutdown()
+    server.server_close()
     thread.join()
+
+
+def test_stream_method_yields_chunks_from_real_provider():
+    """The OpenAICompatibleProvider's stream() should yield SSE chunks."""
+    import threading
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    from speaksql.llm import OpenAICompatibleProvider
+
+    chunks_data = [
+        {"choices": [{"delta": {"content": "SELECT "}}]},
+        {"choices": [{"delta": {"content": "DATE_TRUNC("}}]},
+        {"choices": [{"delta": {"content": "'month', ts)"}}]},
+    ]
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_POST(self) -> None:
+            length = int(self.headers.get("Content-Length", "0"))
+            self.rfile.read(length)
+            self.send_response(200)
+            self.send_header("Content-Type", "text/event-stream")
+            self.end_headers()
+            for c in chunks_data:
+                line = f"data: {json.dumps(c)}\n\n".encode()
+                self.wfile.write(line)
+                self.wfile.flush()
+            self.wfile.write(b"data: [DONE]\n\n")
+            self.wfile.flush()
+
+        def log_message(self, *args):
+            pass
+
+    # SO_REUSEADDR so this port can be re-bound quickly across test runs.
+    class ReuseHTTPServer(HTTPServer):
+        allow_reuse_address = True
+
+    server = ReuseHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+
+    try:
+        p = OpenAICompatibleProvider(
+            base_url=f"http://127.0.0.1:{server.server_address[1]}",
+            model="test",
+            api_key="sk-test",
+        )
+        chunks = list(p.stream([{"role": "user", "content": "x"}]))
+        assert chunks == ["SELECT ", "DATE_TRUNC(", "'month', ts)"]
+        # Note: complete() won't work against this SSE-only fake server
+        # because it tries to JSON-decode the SSE payload. That's an
+        # expected limitation — clients pick one or the other per request.
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_mock_provider_stream_yields_full_string():
+    """MockProvider.stream() should yield the full response in one chunk."""
+    from speaksql.llm import MockProvider
+
+    p = MockProvider()
+    chunks = list(p.stream([{"role": "user", "content": "show all users"}]))
+    assert chunks == ["SELECT * FROM users"]
+
+
+def test_llm_to_canonical_streaming_returns_iterable():
+    """llm_to_canonical_streaming returns an iterable that yields chunks."""
+    from speaksql.llm import (
+        MockProvider,
+        llm_to_canonical_streaming,
+    )
+
+    chunks = list(
+        llm_to_canonical_streaming("show all users", provider=MockProvider())
+    )
+    # Mock provider yields the full string in one chunk
+    assert chunks == ["SELECT * FROM users"]
 
 
 def test_openai_provider_against_fake_server(fake_openai_server):
@@ -202,10 +286,16 @@ def test_openai_provider_handles_400(fake_openai_server):
 def test_openai_provider_malformed_response(fake_openai_server):
     class BadHandler(_Handler):
         def do_POST(self) -> None:
+            # Write the malformed body BEFORE calling end_headers so the
+            # client doesn't see a half-closed response. Use Content-Length
+            # explicitly so the client knows how much to read.
+            body = b"not json"
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(b"not json")
+            self.wfile.write(body)
+            self.wfile.flush()
 
     fake_openai_server.shutdown()
     server = HTTPServer(("127.0.0.1", 0), BadHandler)
@@ -222,6 +312,7 @@ def test_openai_provider_malformed_response(fake_openai_server):
             p.complete([{"role": "user", "content": "x"}])
     finally:
         server.shutdown()
+        server.server_close()
         thread.join()
 
 

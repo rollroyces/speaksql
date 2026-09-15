@@ -13,11 +13,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, WebSocket
 from pydantic import BaseModel, Field
 
+import speaksql.llm
 from speaksql import SUPPORTED_DIALECTS, semantic_diff, transpile
-from speaksql.exceptions import BackendError, SpeakSQLError
+from speaksql.exceptions import BackendError, SpeakSQLError, TranspileError
 from speaksql.nl import nl_to_canonical
 
 # Backends that can be used as execute targets. Mirrors the CLI choice set.
@@ -251,3 +252,150 @@ def graph(req: GraphRequest) -> GraphResponse:
 @app.get("/v1/dialects")
 def dialects() -> dict[str, list[str]]:
     return {"supported": sorted(SUPPORTED_DIALECTS)}
+
+
+# ---------------------------------------------------------------------------
+# WebSocket /v1/ask — streaming variant of the POST /v1/ask endpoint.
+#
+# Protocol:
+#   client → server: {"question": str, "dialects": [str], "is_sql": bool}
+#   server → client (one frame each):
+#       {"type": "canonical", "sql": str}              # canonical SQL we used
+#       {"type": "transpile", "dialect": str, "sql": str}   # 1 per target
+#       {"type": "diff", "dialect": str, "diffs": [...]}      # if asked
+#       {"type": "done"}
+#       {"type": "error", "message": str}
+#
+# If the LLM planner is enabled (SPEAKSQL_USE_LLM=1), canonical SQL is
+# streamed token-by-token from the upstream endpoint; the assembled
+# canonical SQL is then transpiled per-target before the per-dialect
+# frames are sent. This avoids holding the whole response before the
+# client sees anything.
+# ---------------------------------------------------------------------------
+
+
+@app.websocket("/v1/ask")
+async def ws_ask(ws: WebSocket) -> None:
+    await ws.accept()
+    try:
+        payload = await ws.receive_json()
+    except (ValueError, RuntimeError) as e:  # pragma: no cover — malformed payload
+        await ws.send_json({"type": "error", "message": f"bad payload: {e}"})
+        await ws.close()
+        return
+
+    question = str(payload.get("question", "")).strip()
+    if not question:
+        await ws.send_json({"type": "error", "message": "empty question"})
+        await ws.close()
+        return
+
+    is_sql = bool(payload.get("is_sql", False))
+    targets = payload.get("dialects") or sorted(SUPPORTED_DIALECTS)
+    for d in targets:
+        if d not in SUPPORTED_DIALECTS:
+            await ws.send_json(
+                {"type": "error", "message": f"unsupported dialect '{d}'"}
+            )
+            await ws.close()
+            return
+
+    # Resolve canonical SQL, streaming from the LLM if appropriate.
+    canonical_sql = await _resolve_canonical_ws(
+        ws, question, is_sql=is_sql
+    )
+    if canonical_sql is None:
+        # An error frame was already sent; close out.
+        return
+    await ws.send_json({"type": "canonical", "sql": canonical_sql})
+
+    # Per-dialect transpilation. Each is small enough to emit in one frame.
+    from speaksql import transpile
+
+    try:
+        results = transpile(canonical_sql, targets)
+    except (TranspileError, ValueError, TypeError) as e:
+        await ws.send_json({"type": "error", "message": f"transpile failed: {e}"})
+        await ws.close()
+        return
+    for dialect, sql in results.items():
+        await ws.send_json({"type": "transpile", "dialect": dialect, "sql": sql})
+
+    await ws.send_json({"type": "done"})
+
+
+async def _resolve_canonical_ws(
+    ws: WebSocket, question: str, *, is_sql: bool
+) -> str | None:
+    """Decide the canonical SQL; stream from LLM if appropriate.
+
+    Returns the assembled canonical SQL string, or None if an error
+    frame was already sent to the client.
+
+    Decision tree:
+        is_sql → echo the question back as-is.
+        otherwise → if SPEAKSQL_USE_LLM=1, bypass the rule-based
+        `nl_to_canonical` (which would silently call the mock LLM
+        internally) and stream directly. Otherwise, run the rule layer
+        and use its result.
+    """
+    import asyncio
+
+    if is_sql:
+        return question
+
+    # Late-import so test-time monkey-patching of `llm.make_provider` is
+    # effective.
+    from speaksql import llm as _llm
+    from speaksql.nl import nl_to_canonical
+
+    if not _llm.is_llm_enabled():
+        # Pure rule-based path — fast, no LLM round-trip.
+        return nl_to_canonical(question)
+
+    # LLM streaming path. Note we deliberately do NOT call
+    # nl_to_canonical here — it would invoke the LLM itself and we'd
+    # lose the streaming signal. Instead, run the rule patterns
+    # inline and stream only when they miss.
+    rule_result = _apply_rule_patterns(question)
+    if not rule_result.lstrip().startswith("-- could not parse"):
+        return rule_result
+
+    try:
+        generator = _llm.llm_to_canonical_streaming(question)
+        chunks: list[str] = []
+        for chunk in generator:
+            chunks.append(chunk)
+            await ws.send_json({"type": "llm_token", "delta": chunk})
+            # Yield to the event loop so the client actually receives the
+            # frame before we keep iterating.
+            await asyncio.sleep(0.01)
+    except (speaksql.llm.LLMError, OSError, ValueError, TypeError) as e:
+        await ws.send_json({"type": "error", "message": f"LLM stream failed: {e}"})
+        return None
+
+    assembled = "".join(chunks).strip()
+    # Fall back to the rule-layer placeholder if the LLM gave us nothing.
+    if not assembled:
+        return rule_result
+    return assembled
+
+
+def _apply_rule_patterns(question: str) -> str:
+    """Run the rule-based NL patterns and return canonical SQL or placeholder.
+
+    Mirrors `speaksql.nl.nl_to_canonical` minus the LLM fallback —
+    we don't want a side-channel LLM call here.
+    """
+
+    from speaksql.nl import _PATTERNS
+
+    q = question.strip().rstrip("?.!")
+    for pat, tmpl in _PATTERNS:
+        m = pat.match(q)
+        if m:
+            try:
+                return tmpl.format(**m.groupdict())
+            except KeyError:
+                continue
+    return f"-- could not parse: {question}\nSELECT 1 AS placeholder"

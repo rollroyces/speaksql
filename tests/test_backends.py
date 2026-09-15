@@ -28,10 +28,12 @@ def test_backend_factory():
 
 
 def test_unsupported_backend_dialect():
-    """Oracle/MySQL aren't bundled — backend_for() must surface that cleanly."""
+    """Dialects not in our registry must surface UnsupportedDialectError."""
     from speaksql.exceptions import UnsupportedDialectError
 
+    # 'mysql' IS in our registry (since v0.4) but the driver may or may
+    # not be installed. We test truly-unsupported names.
     with pytest.raises(UnsupportedDialectError):
         backend_for("oracle")
     with pytest.raises(UnsupportedDialectError):
-        backend_for("mysql")
+        backend_for("redshift")

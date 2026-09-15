@@ -42,7 +42,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -112,6 +112,15 @@ class LLMProvider(Protocol):
         """Return the model's raw text response. Raise LLMError on any failure."""
         ...
 
+    def stream(self, messages: Sequence[dict[str, str]]) -> Iterable[str]:
+        """Yield model output incrementally as text chunks arrive.
+
+        Default implementation falls back to `complete()` and yields the
+        full response in a single chunk. Real streaming providers should
+        override to yield partial deltas from the network.
+        """
+        yield self.complete(messages)
+
 
 @dataclass
 class MockProvider:
@@ -131,6 +140,9 @@ class MockProvider:
             if trigger.lower() in question:
                 return sql
         return "SELECT 1 AS placeholder"
+
+    def stream(self, messages: Sequence[dict[str, str]]) -> Iterable[str]:
+        yield self.complete(messages)
 
 
 @dataclass
@@ -189,6 +201,60 @@ class OpenAICompatibleProvider:
         except (KeyError, IndexError, json.JSONDecodeError) as e:
             raise LLMError(f"LLM response malformed: {e}\nbody={body[:200]}") from e
 
+    def stream(self, messages: Sequence[dict[str, str]]) -> Iterable[str]:
+        """Yield incremental text deltas from the OpenAI-compatible endpoint.
+
+        Sets `stream=True` in the request payload and parses the
+        Server-Sent-Events-style response (lines of `data: {...}` JSON).
+        Yields each `delta.content` text chunk as it arrives.
+
+        Yields `LLMError` text if the network call fails — callers
+        iterating over the result should treat each yield as a
+        partial chunk, not as a final response.
+        """
+        url = f"{self.base_url.rstrip('/')}/chat/completions"
+        payload = {
+            "model": self.model,
+            "messages": list(messages),
+            "max_tokens": self.max_tokens,
+            "temperature": self.temperature,
+            "stream": True,
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "Content-Type": "application/json",
+                self.auth_header: f"{self.auth_prefix}{self.api_key}",
+            },
+        )
+        try:
+            resp = urllib.request.urlopen(req, timeout=self.timeout_s)
+        except urllib.error.URLError as e:
+            raise LLMError(f"LLM stream request failed: {e}") from e
+
+        try:
+            for raw_line in resp:
+                line = raw_line.decode("utf-8", errors="replace").strip()
+                if not line or not line.startswith("data:"):
+                    continue
+                payload_str = line[len("data:"):].strip()
+                if payload_str == "[DONE]":
+                    break
+                try:
+                    chunk = json.loads(payload_str)
+                except json.JSONDecodeError:
+                    continue
+                delta = (
+                    chunk.get("choices", [{}])[0]
+                    .get("delta", {})
+                    .get("content")
+                )
+                if delta:
+                    yield delta
+        finally:
+            resp.close()
+
 
 def is_llm_enabled() -> bool:
     """True when the LLM planner should be used as a fallback."""
@@ -226,6 +292,20 @@ def make_provider() -> LLMProvider:
     return MockProvider()
 
 
+def _build_messages(question: str) -> list[dict[str, str]]:
+    """Assemble the OpenAI-shaped message list for the LLM call.
+
+    System prompt + few-shot examples + the user's question. Kept in a
+    helper so complete() and stream() stay in lockstep.
+    """
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        *({"role": "user", "content": q} for q, _ in FEW_SHOT_EXAMPLES),
+        *({"role": "assistant", "content": sql} for _, sql in FEW_SHOT_EXAMPLES),
+        {"role": "user", "content": question},
+    ]
+
+
 def llm_to_canonical(question: str, provider: LLMProvider | None = None) -> str:
     """Translate a natural-language question into canonical ANSI SQL via LLM.
 
@@ -238,20 +318,22 @@ def llm_to_canonical(question: str, provider: LLMProvider | None = None) -> str:
     Validation happens downstream in `plan()`.
     """
     provider = provider or make_provider()
-    messages: list[dict[str, str]] = [
-        {"role": "system", "content": SYSTEM_PROMPT},
-        *(
-            {"role": "user", "content": q}
-            for q, _ in FEW_SHOT_EXAMPLES
-        ),
-        *(
-            {"role": "assistant", "content": sql}
-            for _, sql in FEW_SHOT_EXAMPLES
-        ),
-        {"role": "user", "content": question},
-    ]
-    raw = provider.complete(messages)
+    raw = provider.complete(_build_messages(question))
     return raw.strip()
+
+
+def llm_to_canonical_streaming(
+    question: str, provider: LLMProvider | None = None
+) -> Iterable[str]:
+    """Streaming variant of `llm_to_canonical`.
+
+    Yields text chunks from the underlying provider as they arrive. The
+    caller is responsible for joining chunks if a complete string is
+    needed. Raises `LLMError` if the underlying stream fails; the
+    exception propagates out of the generator at iteration time.
+    """
+    provider = provider or make_provider()
+    return provider.stream(_build_messages(question))
 
 
 __all__ = [
@@ -263,5 +345,6 @@ __all__ = [
     "OpenAICompatibleProvider",
     "is_llm_enabled",
     "llm_to_canonical",
+    "llm_to_canonical_streaming",
     "make_provider",
 ]

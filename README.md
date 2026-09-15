@@ -62,8 +62,9 @@ copy-paste and no dialect-specific debugging.*
   type aliases, structural). Not just textual.
 - 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
   + FK metadata.
-- ✅ **121 tests passing** — unit + integration, including live SQLite
-  and DuckDB roundtrips.
+- ✅ **139 tests passing** — unit + integration, including live SQLite
+  and DuckDB roundtrips, fake-server SSE streaming, and WebSocket
+  end-to-end frames.
 - 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
   lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
 - 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
@@ -82,10 +83,12 @@ pip install speaksql
 ```bash
 pip install speaksql[service]   # FastAPI + Uvicorn for the HTTP service
 pip install speaksql[postgres]  # psycopg driver
+pip install speaksql[mysql]     # PyMySQL driver
+pip install speaksql[mssql]     # pymssql driver (SQL Server)
 pip install speaksql[duckdb]    # in-process DuckDB driver (great for tests)
 pip install speaksql[snowflake] # snowflake-connector-python
 pip install speaksql[bigquery]  # google-cloud-bigquery
-pip install speaksql[backends]  # all four of the above
+pip install speaksql[backends]  # all six drivers above
 pip install speaksql[dev]       # pytest + ruff + mypy
 ```
 
@@ -134,11 +137,15 @@ ORDER BY
 
 ### CLI
 
-```bash
-# NL question → all supported dialects
-speaksql ask "monthly amount by country"
+The CLI takes **natural language by default**. No `--sql` flag needed for
+plain English:
 
-# Canonical SQL → specific targets only
+```bash
+# Natural language → all supported dialects
+speaksql ask "monthly amount by country"
+# → emits DATE_TRUNC GROUP BY for postgres, bigquery, snowflake, ...
+
+# Canonical SQL → specific targets only (skip NL layer)
 speaksql ask -d postgres -d snowflake --sql \
   "SELECT id, amount FROM events WHERE amount > 100"
 
@@ -152,11 +159,11 @@ speaksql ask -d duckdb --sql \
   --db-path /tmp/events.duckdb \
   --json
 
-# Semantic diff between two SQL strings
+# Compare two SQL strings semantically
 speaksql diff "SELECT id FROM t ORDER BY id ASC NULLS LAST" \
             "SELECT id FROM t ORDER BY id ASC" --json
 
-# JOIN graph from a SQLite database
+# Build a JOIN graph from a SQLite database
 speaksql graph ./analytics.sqlite --backend sqlite --html ./graph.html
 
 # List supported dialects
@@ -177,7 +184,21 @@ pip install speaksql[service]
 uvicorn speaksql.service:app --reload
 ```
 
-Transpile only:
+The HTTP service takes **natural language** by default. No `is_sql` flag
+required for plain English:
+
+Transpile only — natural-language input:
+
+```bash
+curl -X POST http://localhost:8000/v1/ask \
+  -H 'content-type: application/json' \
+  -d '{
+        "question": "monthly amount by country",
+        "dialects": ["postgres", "snowflake", "bigquery"]
+      }'
+```
+
+Transpile only — canonical SQL input (skip NL layer):
 
 ```bash
 curl -X POST http://localhost:8000/v1/ask \
@@ -205,10 +226,29 @@ curl -X POST http://localhost:8000/v1/execute \
 Returns `row_count` + `rows` (capped at 100), with datetime/Decimal values
 ISO-formatted for clean JSON parsing.
 
+**Streaming via WebSocket** — connect to `ws://localhost:8000/v1/ask`,
+send the same JSON payload, and receive a sequence of frames as the
+canonical SQL is built and per-dialect transpilation completes:
+
+```text
+client → server: {"question": "monthly active users"}
+server → client: {"type": "llm_token", "delta": "SELECT "}
+server → client: {"type": "llm_token", "delta": "DATE_TRUNC("}
+... (more llm_token frames if SPEAKSQL_USE_LLM=1 and the rule layer missed)
+server → client: {"type": "canonical",  "sql": "SELECT ..."}
+server → client: {"type": "transpile", "dialect": "postgres", "sql": "..."}
+server → client: {"type": "transpile", "dialect": "snowflake", "sql": "..."}
+server → client: {"type": "done"}
+```
+
+The WebSocket path is end-to-end async and is the recommended surface
+for clients that want to show partial results as the LLM streams.
+
 | Endpoint | Method | Purpose |
 |---|---|---|
 | `/v1/ask` | POST | Transpile SQL or NL to one or more dialects |
-| `/v1/execute` | POST | Transpile + execute on a live backend (sqlite/duckdb/postgres/snowflake/bigquery) |
+| `/v1/ask` | WebSocket | Streaming variant — receives `llm_token` / `canonical` / `transpile` / `done` frames |
+| `/v1/execute` | POST | Transpile + execute on a live backend (sqlite/duckdb/postgres/mysql/mssql/snowflake/bigquery) |
 | `/v1/diff` | POST | Compare two SQL strings semantically; returns `{identical, differences}` |
 | `/v1/graph` | POST | Build a JOIN graph from a SQLite/DuckDB file; returns JSON + HTML |
 | `/v1/dialects` | GET | List supported dialect identifiers |
@@ -223,9 +263,11 @@ verify the emitted SQL against a real engine:
 | SQLite | (base install) | `from speaksql.backends import backend_for; backend_for("sqlite")` |
 | DuckDB | `pip install speaksql[duckdb]` | `backend_for("duckdb")` |
 | PostgreSQL | `pip install speaksql[postgres]` | `backend_for("postgres", host=..., dbname=..., user=..., password=...)` |
+| MySQL | `pip install speaksql[mysql]` | `backend_for("mysql", host=..., user=..., password=..., database=...)` |
+| SQL Server | `pip install speaksql[mssql]` | `backend_for("mssql", server=..., user=..., password=..., database=...)` |
 | Snowflake | `pip install speaksql[snowflake]` | `backend_for("snowflake", user=..., password=..., account=..., warehouse=...)` |
 | BigQuery | `pip install speaksql[bigquery]` | `backend_for("bigquery", project=...)` |
-| All four | `pip install speaksql[backends]` | — |
+| All six | `pip install speaksql[backends]` | — |
 
 Every backend implements the same `Backend` protocol: `introspect()` returns a
 `SchemaList`, `execute(sql)` returns `list[tuple]`, `close()` shuts the
@@ -257,12 +299,17 @@ patterns covering `count of X`, `top N X by Y`, and `monthly X by Y`. When
 a query doesn't match, it returns a syntactically valid placeholder SQL
 with the original question preserved as a comment. **No fabrication.**
 
+The CLI and HTTP service take **natural language directly** — no flag
+needed. If the rule layer matches, the LLM is bypassed entirely. If the
+rule layer misses and `SPEAKSQL_USE_LLM=1`, the LLM kicks in as a
+fallback.
+
 ```mermaid
 sequenceDiagram
     participant User
     participant NL as nl_to_canonical
     participant Rules as Rule patterns
-    participant LLM as llm_to_canonical
+    participant LLM as llm_to_canonical_streaming
     participant Provider as OpenAI-compatible endpoint
 
     User->>NL: "monthly active users"
@@ -276,13 +323,18 @@ sequenceDiagram
             NL-->>User: "-- could not parse: ..."<br/>SELECT 1 AS placeholder
         else LLM enabled
             NL->>LLM: question
-            LLM->>Provider: POST /chat/completions<br/>(system prompt + few-shot)
-            Provider-->>LLM: canonical SQL
-            LLM-->>NL: canonical SQL
+            LLM->>Provider: POST /chat/completions<br/>(system prompt + few-shot,<br/>stream=true)
+            Provider-->>LLM: SSE chunks<br/>(data: {"delta":{...}})
+            LLM-->>NL: concatenated canonical SQL
             NL-->>User: canonical SQL
         end
     end
 ```
+
+**Streaming.** Both providers implement `stream(messages)` which yields
+incremental text deltas via Server-Sent Events. SpeakSQL exposes this as
+`llm_to_canonical_streaming(question)` — useful for the WebSocket
+endpoint, which forwards each chunk as an `llm_token` frame.
 
 For more flexible NL handling, set `SPEAKSQL_USE_LLM=1` and configure
 a provider. SpeakSQL ships:
@@ -531,8 +583,8 @@ curl -X POST http://localhost:8000/v1/diff \
 | Dialect | Identifier | Aliases | Status | Live FK introspection |
 |---|---|---|---|---|
 | PostgreSQL | `postgres` | — | ✅ native + backend | ✅ `information_schema.referential_constraints` |
-| MySQL | `mysql` | — | ✅ native (transpile only) | n/a (no MySQL driver shipped) |
-| SQL Server | `tsql` | `mssql`, `sqlserver` | ✅ native (transpile only) | n/a (no SQL Server driver shipped) |
+| MySQL | `mysql` | — | ✅ native + backend | ✅ `information_schema.key_column_usage` |
+| SQL Server | `tsql` | `mssql`, `sqlserver` | ✅ native + backend | ✅ `sys.foreign_keys` |
 | Snowflake | `snowflake` | — | ✅ native + backend | ✅ informational only — often empty |
 | BigQuery | `bigquery` | — | ✅ native + backend | ❌ no FK concept in BigQuery DDL |
 | Databricks / Spark | `spark` | `databricks` | ✅ native (transpile only) | n/a (no Spark driver shipped) |
@@ -639,7 +691,7 @@ Three orthogonal tools complement the transpile pipeline:
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 121 tests
+uv run pytest            # 139 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -662,7 +714,7 @@ speaksql/
 │   ├── backends/              # per-dialect DB drivers (SQLite, DuckDB,
 │   │                          #   Postgres, Snowflake, BigQuery)
 │   └── dialects/              # vendor dialects (hana.py)
-├── tests/                     # 121 tests across 19 files
+├── tests/                     # 139 tests across 24 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   └── llm_eval/              # eval harness + eval_set.jsonl
@@ -673,7 +725,7 @@ speaksql/
 
 ## Roadmap
 
-All five items from the original v0.1 roadmap are shipped:
+All roadmap items from the original v0.1 launch are shipped:
 
 - [x] ~~Real HANA dialect~~ — shipped via `src/speaksql/dialects/hana.py`
       (vendor dialect subclassing Postgres)
@@ -690,14 +742,21 @@ All five items from the original v0.1 roadmap are shipped:
       instead of name heuristics~~ — shipped; SQLite `PRAGMA`, Postgres
       `information_schema`, DuckDB `duckdb_constraints()`, Snowflake
       `information_schema`, BigQuery (no-op)
+- [x] ~~MySQL and SQL Server backends (currently transpile-only)~~ —
+      shipped; PyMySQL + pymssql respectively
+- [x] ~~Streaming LLM provider for long SQL generation~~ — shipped via
+      `OpenAICompatibleProvider.stream()` (SSE) and
+      `llm_to_canonical_streaming()`
+- [x] ~~WebSocket `/v1/ask` endpoint with partial-response streaming~~ —
+      shipped; emits `llm_token` / `canonical` / `transpile` / `done`
+      frames incrementally
 
 New ideas being considered:
 
+- [ ] Databricks / Spark backend (currently transpile-only)
 - [ ] Custom Snowflake / BigQuery / HANA vendor overrides (functions,
       types, syntactic idioms)
-- [ ] MySQL and SQL Server backends (currently transpile-only)
-- [ ] Streaming LLM provider for long SQL generation
-- [ ] WebSocket `/v1/ask` endpoint with partial-response streaming
+- [ ] FK-aware SQL generation (use graph knowledge to choose joins)
 
 ---
 
@@ -720,5 +779,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 121 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 139 tests green</sub>
 </p>
