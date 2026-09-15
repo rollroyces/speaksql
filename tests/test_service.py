@@ -84,6 +84,39 @@ def test_service_execute_duckdb(tmp_path):
     assert body["rows"][0][0].startswith("2026-")
 
 
+def test_service_diff_identical():
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/diff",
+        json={"sql_a": "SELECT id FROM t", "sql_b": "SELECT id FROM t"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["identical"] is True
+    assert body["differences"] == []
+
+
+def test_service_diff_detects_null_ordering():
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/diff",
+        json={
+            "sql_a": "SELECT id FROM t ORDER BY id ASC NULLS LAST",
+            "sql_b": "SELECT id FROM t ORDER BY id ASC",
+        },
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["identical"] is False
+    assert any(d["category"] == "null_ordering" for d in body["differences"])
+
+
 def test_service_execute_missing_driver_400():
     """If the driver can't construct (missing creds or missing driver), surface a reason.
 

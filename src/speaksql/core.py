@@ -40,12 +40,11 @@ _DIALECT_ALIASES: dict[str, str] = {
     "databricks": "spark",
     "duckdb": "duckdb",
     "sqlite": "sqlite",
-    # HANA has no built-in SQLGlot dialect; we emit through postgres (HANA
-    # is broadly ANSI-compatible) and flag vendor-specific functions in
-    # the override map. Once a real HANA dialect lands upstream this
-    # alias flips without breaking callers.
-    "hana": "postgres",
-    "saphana": "postgres",
+    # HANA: now routes to a real vendor dialect registered in
+    # speaksql.dialects.hana. We import lazily to avoid forcing the
+    # HANA module on every import (it monkey-patches SQLGlot).
+    "hana": "hana",
+    "saphana": "hana",
 }
 
 SUPPORTED_DIALECTS = frozenset(SUPPORTED_DIALECTS_LIST)
@@ -54,7 +53,13 @@ SUPPORTED_DIALECTS = frozenset(SUPPORTED_DIALECTS_LIST)
 def _resolve_dialect(dialect: str) -> str:
     d = dialect.lower().strip()
     if d in _DIALECT_ALIASES:
-        return _DIALECT_ALIASES[d]
+        target = _DIALECT_ALIASES[d]
+        # Lazily register the HANA dialect — its module monkey-patches
+        # SQLGlot, so we don't want to import it on every call.
+        if target == "hana":
+            from speaksql.dialects.hana import _register as _register_hana
+            _register_hana()
+        return target
     if d in SUPPORTED_DIALECTS_LIST:
         return d
     raise UnsupportedDialectError(d)

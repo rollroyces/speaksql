@@ -200,6 +200,53 @@ for t in schema.tables:
 # main.events: ['id', 'amount']
 ```
 
+### Semantic diff
+
+Compare two SQL strings (possibly from different dialects) and see the
+**semantic** differences — not just textual ones:
+
+```python
+import speaksql
+
+# Same canonical query, transpiled to Postgres and BigQuery
+postgres = "SELECT id FROM t ORDER BY id ASC NULLS LAST"
+bigquery = "SELECT id FROM t ORDER BY id ASC"
+
+diffs = speaksql.semantic_diff(postgres, bigquery, dialect_a="postgres", dialect_b="bigquery")
+print(speaksql.format_diff(diffs))
+```
+
+Output:
+
+```
+1 semantic difference(s):
+  1. [null_ordering] @ ORDER BY #0
+     a: 'NULLS LAST'
+     b: 'NULLS FIRST'  (null ordering differs)
+```
+
+Detected categories: `function_call` (same function, different call form),
+`null_ordering` (NULLS FIRST/LAST), `distinct_syntax` (TOP vs LIMIT,
+ASC vs DESC), `type_name` (DOUBLE PRECISION vs FLOAT8), `literal`
+(quoting), `predicate`, `structural` (different tables/projections).
+
+CLI:
+
+```bash
+speaksql diff "SELECT id FROM t ORDER BY id ASC NULLS LAST" \
+            "SELECT id FROM t ORDER BY id ASC" --json
+```
+
+Service:
+
+```bash
+curl -X POST http://localhost:8000/v1/diff \
+  -H 'content-type: application/json' \
+  -d '{"sql_a": "SELECT id FROM t ORDER BY id ASC NULLS LAST",
+       "sql_b": "SELECT id FROM t ORDER BY id ASC"}'
+# {"identical": false, "differences": [{"category": "null_ordering", ...}]}
+```
+
 ---
 
 ## Supported dialects
@@ -214,21 +261,25 @@ for t in schema.tables:
 | Databricks / Spark | `spark` | `databricks` | ✅ native |
 | DuckDB | `duckdb` | — | ✅ native |
 | SQLite | `sqlite` | — | ✅ native (bundled backend) |
-| SAP HANA | `hana` | `saphana` | ⚠️ routed via Postgres — see [HANA caveats](#hana-caveats) |
+| SAP HANA | `hana` | `saphana` | ✅ vendor (see [HANA dialect](#sap-hana-hana)) |
 
-### HANA caveats
+### SAP HANA (`hana`)
 
-SAP HANA is broadly ANSI-compatible, but SQLGlot does not yet ship a
-first-party HANA dialect. SpeakSQL emits through PostgreSQL syntax, which
-covers the vast majority of real-world HANA queries. Vendor-specific
-functions (`ADD_MONTHS`, `SERIES_GENERATE`, `CEIL`, `MAP`, etc.) need a
-hand-written override — currently these are passed through verbatim, so
-review them before running.
+SpeakSQL ships a vendor-side HANA dialect (`src/speaksql/dialects/hana.py`)
+that subclasses SQLGlot's Postgres parser. Upstream SQLGlot does not yet
+ship a HANA dialect, so we maintain one locally.
 
-We're tracking the upstream dialect:
-[tobymao/sqlglot — SAP HANA issue](https://github.com/tobymao/sqlglot/issues).
-Once a real HANA dialect lands, the `hana → postgres` alias flips with no
-breaking change to callers.
+The HANA dialect:
+
+- Inherits Postgres grammar (HANA is broadly ANSI-compatible)
+- Removes Postgres's 2-arity `MAP` binding — HANA's `MAP(k1, v1, k2, v2, ...)`
+  takes variable even-arity pairs
+- Roundtrips HANA-specific functions through unchanged: `ADD_MONTHS`,
+  `DAYS_BETWEEN`, `SECONDS_BETWEEN`, `SERIES_GENERATE_DATE`,
+  `BINNING`, `TO_VARCHAR`, `IFNULL`, etc.
+
+When upstream SQLGlot ships a real HANA dialect, this module either
+inherits from it or becomes a thin shim — callers don't notice.
 
 ---
 

@@ -16,7 +16,7 @@ from collections.abc import Iterable
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-from speaksql import SUPPORTED_DIALECTS, transpile
+from speaksql import SUPPORTED_DIALECTS, semantic_diff, transpile
 from speaksql.exceptions import BackendError, SpeakSQLError
 from speaksql.nl import nl_to_canonical
 
@@ -59,6 +59,18 @@ class ExecuteResponse(BaseModel):
     rows: list[list] | None = None
     error: str | None = None
     reason: str | None = None
+
+
+class DiffRequest(BaseModel):
+    sql_a: str = Field(..., min_length=1)
+    sql_b: str = Field(..., min_length=1)
+    dialect_a: str | None = Field(default=None)
+    dialect_b: str | None = Field(default=None)
+
+
+class DiffResponse(BaseModel):
+    identical: bool
+    differences: list[dict[str, str | None]]
 
 
 app = FastAPI(
@@ -156,6 +168,29 @@ def _jsonify(v: object) -> object:
     if hasattr(v, "as_tuple"):  # Decimal
         return float(v)
     return v
+
+
+@app.post("/v1/diff", response_model=DiffResponse)
+def diff(req: DiffRequest) -> DiffResponse:
+    """Compare two SQL strings semantically.
+
+    Returns `identical: true` and an empty `differences` list when the two
+    SQL strings parse to semantically equivalent ASTs. Otherwise returns the
+    categorised differences (function-call rewrites, null-ordering, etc.).
+    """
+    try:
+        diffs = semantic_diff(
+            req.sql_a,
+            req.sql_b,
+            dialect_a=req.dialect_a or "",
+            dialect_b=req.dialect_b or "",
+        )
+    except Exception as e:
+        raise HTTPException(status_code=422, detail=str(e)) from e
+    return DiffResponse(
+        identical=len(diffs) == 0,
+        differences=[d.to_dict() for d in diffs],
+    )
 
 
 @app.get("/v1/dialects")

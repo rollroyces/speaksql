@@ -85,3 +85,48 @@ def test_cli_ask_execute_duckdb(tmp_path):
     assert parsed["execution"]["executed"] is True
     assert parsed["execution"]["backend"] == "duckdb"
     assert parsed["execution"]["row_count"] == 2
+
+
+def test_cli_diff_identical():
+    r = CliRunner().invoke(
+        main,
+        [
+            "diff",
+            "SELECT id FROM t WHERE id > 0",
+            "SELECT id FROM t WHERE id > 0",
+        ],
+    )
+    assert r.exit_code == 0
+    assert "No semantic differences" in r.output
+
+
+def test_cli_diff_with_null_ordering():
+    r = CliRunner().invoke(
+        main,
+        [
+            "diff",
+            "SELECT id FROM t ORDER BY id ASC NULLS LAST",
+            "SELECT id FROM t ORDER BY id ASC",
+            "--json",
+        ],
+    )
+    assert r.exit_code == 0
+    import json
+    parsed = json.loads(r.output)
+    assert any(d["category"] == "null_ordering" for d in parsed)
+
+
+def test_cli_diff_with_dialect():
+    r = CliRunner().invoke(
+        main,
+        [
+            "diff",
+            "-d",
+            "tsql",
+            "postgres",
+            "SELECT TOP 10 id FROM t",
+            "SELECT id FROM t LIMIT 10",
+        ],
+    )
+    assert r.exit_code == 0
+    assert "No semantic differences" in r.output

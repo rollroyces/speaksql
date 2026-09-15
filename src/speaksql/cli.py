@@ -12,7 +12,7 @@ from collections.abc import Iterable
 
 import click
 
-from speaksql import SUPPORTED_DIALECTS, transpile
+from speaksql import SUPPORTED_DIALECTS, format_diff, semantic_diff, transpile
 from speaksql.nl import nl_to_canonical  # optional NL layer
 
 
@@ -168,6 +168,47 @@ def dialects() -> None:
     """Print all supported dialects."""
     for d in sorted(SUPPORTED_DIALECTS):
         click.echo(d)
+
+
+@main.command()
+@click.argument("sql_a")
+@click.argument("sql_b")
+@click.option(
+    "-d",
+    "--dialect",
+    "dialects",
+    nargs=2,
+    type=click.Choice(sorted(SUPPORTED_DIALECTS)),
+    default=None,
+    help="Source dialects for the two SQL strings (e.g. -d postgres bigquery).",
+)
+@click.option(
+    "--json",
+    "as_json",
+    is_flag=True,
+    help="Emit a JSON list of differences instead of pretty text.",
+)
+def diff(
+    sql_a: str,
+    sql_b: str,
+    dialects: tuple[str, str] | None,
+    as_json: bool,
+) -> None:
+    """Show semantic differences between two SQL statements.
+
+    Parses both SQL strings with SQLGlot (so dialect-aware parsing applies),
+    then reports categorical differences: function-call rewrites, null-ordering,
+    sort direction, type aliases, and structural differences.
+
+    A zero-difference result means the two statements are semantically identical.
+    """
+    da = dialects[0] if dialects else ""
+    db = dialects[1] if dialects else ""
+    diffs = semantic_diff(sql_a, sql_b, dialect_a=da, dialect_b=db)
+    if as_json:
+        click.echo(json.dumps([d.to_dict() for d in diffs], indent=2))
+        return
+    click.echo(format_diff(diffs))
 
 
 if __name__ == "__main__":  # pragma: no cover
