@@ -200,6 +200,112 @@ for t in schema.tables:
 # main.events: ['id', 'amount']
 ```
 
+### LLM planner
+
+The default NL→SQL planner in `speaksql.nl` is rule-based — three regex
+patterns covering `count of X`, `top N X by Y`, and `monthly X by Y`. When
+a query doesn't match, it returns a syntactically valid placeholder SQL
+with the original question preserved as a comment. **No fabrication.**
+
+For more flexible NL handling, set `SPEAKSQL_USE_LLM=1` and configure
+a provider. SpeakSQL ships:
+
+- `MockProvider` — returns canned canonical SQL for testing. The default.
+- `OpenAICompatibleProvider` — POST to any OpenAI-shaped endpoint via
+  stdlib `urllib`. No SDK required. Works with OpenAI, Together, Groq,
+  OpenRouter, vLLM, Ollama, and local llama.cpp.
+
+Env vars:
+
+```bash
+export SPEAKSQL_USE_LLM=1
+export SPEAKSQL_LLM_BASE_URL=https://api.openai.com/v1
+export SPEAKSQL_LLM_API_KEY=sk-...              # or OPENAI_API_KEY
+export SPEAKSQL_LLM_MODEL=gpt-4o-mini
+export SPEAKSQL_LLM_AUTH_HEADER=Authorization  # or x-api-key for Anthropic-style
+export SPEAKSQL_LLM_AUTH_PREFIX='Bearer '
+export SPEAKSQL_LLM_TIMEOUT_S=30
+export SPEAKSQL_LLM_MAX_TOKENS=512
+export SPEAKSQL_LLM_TEMPERATURE=0.0
+```
+
+Programmatic:
+
+```python
+import speaksql
+from speaksql.llm import MockProvider, OpenAICompatibleProvider
+
+# Mock (default; no network)
+p = MockProvider()
+sql = speaksql.llm_to_canonical("show all users", provider=p)
+
+# Custom OpenAI-compatible endpoint
+p = OpenAICompatibleProvider(
+    base_url="https://api.together.xyz/v1",
+    model="meta-llama/Llama-3-70b-chat-hf",
+    api_key="...",
+)
+sql = speaksql.llm_to_canonical("monthly active users", provider=p)
+```
+
+An eval harness lives at `examples/llm_eval/run.py`. Run with the mock
+provider to verify your prompt changes don't regress rule-based
+behavior:
+
+```bash
+PYTHONPATH=src python examples/llm_eval/run.py
+# 7/7 cases passed.
+```
+
+Pass `--provider openai` (with `SPEAKSQL_LLM_BASE_URL` set) to evaluate
+against a real LLM.
+
+### JOIN graph
+
+Given a schema (from `Backend.introspect()`), SpeakSQL builds a JOIN
+graph by looking for FK-shaped column pairs: a column named
+`{singular(other)}_id` matching the other table's PK. The heuristic:
+
+1. **FK by name (strongest):** `orders.user_id` ↔ `users.id` — clear FK.
+2. **Same-name shared column (weaker):** both tables have `foo` of the
+   same type, but **not** PK↔PK of the same name (which is identity,
+   not a join).
+3. **Type mismatch disqualifies:** `description TEXT` vs
+   `description INTEGER` aren't linked.
+
+CLI:
+
+```bash
+speaksql graph ./analytics.sqlite --backend sqlite --html ./graph.html
+```
+
+The HTML is self-contained — no JS, no external CSS, no CDN — and
+embeds an SVG diagram plus a column listing. Service:
+
+```bash
+curl -X POST http://localhost:8000/v1/graph \
+  -H 'content-type: application/json' \
+  -d '{"db_path": "./analytics.sqlite", "backend": "sqlite"}'
+# Returns {db_path, backend, nodes, graph, html}
+```
+
+Programmatic:
+
+```python
+import speaksql
+from speaksql.backends import backend_for
+
+be = backend_for("sqlite", path="./analytics.sqlite")
+schema = be.introspect()
+be.close()
+
+g = speaksql.build_join_graph(schema)
+print(g.to_dict())
+# Write self-contained HTML
+with open("graph.html", "w") as f:
+    f.write(speaksql.render_html(g, title="analytics"))
+```
+
 ### Semantic diff
 
 Compare two SQL strings (possibly from different dialects) and see the
@@ -347,11 +453,25 @@ speaksql/
 
 ## Roadmap
 
-- [ ] Real HANA dialect — submit upstream or vendor locally.
-- [ ] Postgres / Snowflake / BigQuery / DuckDB backends (driver extras).
-- [ ] LLM-backed NL planner behind a feature flag (currently rule-based).
-- [ ] Semantic-diff mode between two dialect emissions.
-- [ ] JOIN graph visualizer for the linked schema.
+- [x] ~~Real HANA dialect~~ — shipped via `src/speaksql/dialects/hana.py`
+      (vendor dialect subclassing Postgres)
+- [x] ~~Postgres / Snowflake / BigQuery / DuckDB backends~~ — shipped
+      via per-dialect extras
+- [x] ~~LLM-backed NL planner behind a feature flag~~ — shipped via
+      `src/speaksql/llm.py` (`SPEAKSQL_USE_LLM=1`)
+- [x] ~~Semantic diff mode between two dialect emissions~~ — shipped
+      via `src/speaksql/diff.py` (`speaksql diff`, `/v1/diff`)
+- [x] ~~JOIN graph visualizer for the linked schema~~ — shipped via
+      `src/speaksql/graph.py` (`speaksql graph`, `/v1/graph`)
+
+All roadmap items from the original v0.1 launch are shipped. New ideas:
+
+- [ ] Read real FK constraints from `information_schema.referential_constraints`
+      instead of name heuristics
+- [ ] Custom Snowflake / BigQuery / HANA vendor overrides (functions,
+      types, syntactic idioms)
+- [ ] Streaming LLM provider for long SQL generation
+- [ ] WebSocket /v1/ask endpoint with partial-response streaming
 
 ---
 

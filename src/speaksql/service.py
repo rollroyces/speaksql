@@ -73,6 +73,21 @@ class DiffResponse(BaseModel):
     differences: list[dict[str, str | None]]
 
 
+class GraphRequest(BaseModel):
+    db_path: str = Field(..., min_length=1, description="Path to a SQLite (or DuckDB) database file.")
+    backend: str = Field(default="sqlite", description="'sqlite' or 'duckdb'.")
+    title: str | None = Field(default=None)
+
+
+class GraphResponse(BaseModel):
+    db_path: str
+    backend: str
+    nodes: int
+    edges: int
+    graph: dict[str, object]
+    html: str
+
+
 app = FastAPI(
     title="SpeakSQL",
     description="Speak once. Query any dialect.",
@@ -190,6 +205,44 @@ def diff(req: DiffRequest) -> DiffResponse:
     return DiffResponse(
         identical=len(diffs) == 0,
         differences=[d.to_dict() for d in diffs],
+    )
+
+
+@app.post("/v1/graph", response_model=GraphResponse)
+def graph(req: GraphRequest) -> GraphResponse:
+    """Build a JOIN graph from a SQLite/DuckDB database file.
+
+    Returns the graph structure as JSON plus a self-contained HTML
+    visualization that can be saved and viewed offline.
+    """
+    if req.backend not in ("sqlite", "duckdb"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"backend '{req.backend}' not supported for /v1/graph (use sqlite or duckdb)",
+        )
+
+    from speaksql.backends import backend_for
+    from speaksql.graph import build_join_graph, render_html
+
+    try:
+        be = backend_for(req.backend, path=req.db_path)
+    except BackendError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+    try:
+        schema = be.introspect()
+    finally:
+        be.close()
+
+    g = build_join_graph(schema)
+    title = req.title or f"JOIN Graph — {req.db_path}"
+    return GraphResponse(
+        db_path=req.db_path,
+        backend=req.backend,
+        nodes=len(g.nodes),
+        edges=len(g.edges),
+        graph=g.to_dict(),
+        html=render_html(g, title=title),
     )
 
 

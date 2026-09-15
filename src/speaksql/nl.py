@@ -36,8 +36,16 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 def nl_to_canonical(question: str) -> str:
     """Translate a natural-language question into a canonical SQL string.
 
-    Falls back to wrapping the question as a CTE name comment if no
-    pattern matches — the caller can replace this with an LLM planner.
+    Two-tier behavior:
+    1. Rule-based patterns (`count of X`, `top N X by Y`, `monthly X by Y`)
+       match first. These work without any external dependency.
+    2. If `SPEAKSQL_USE_LLM=1` is set AND no rule matched, falls back to
+       the LLM planner (`speaksql.llm`). If the LLM planner is disabled
+       or also fails, returns a syntactically valid placeholder SQL with
+       the question preserved as a comment.
+
+    Honest about what it handles — never fabricates a meaningful SQL
+    query from an ambiguous question.
     """
     q = question.strip().rstrip("?.!")
     for pat, tmpl in _PATTERNS:
@@ -47,6 +55,19 @@ def nl_to_canonical(question: str) -> str:
                 return tmpl.format(**m.groupdict())
             except KeyError:
                 continue
+    # Rule-based missed. Try LLM if enabled.
+    try:
+        from speaksql.llm import is_llm_enabled, llm_to_canonical
+    except ImportError:
+        is_llm_enabled = lambda: False
+        llm_to_canonical = None  # type: ignore[assignment]
+    if is_llm_enabled() and llm_to_canonical is not None:
+        try:
+            return llm_to_canonical(question)
+        except Exception as e:  # noqa: BLE001
+            # LLM unavailable / timed out / failed validation — log and fall through.
+            import logging
+            logging.getLogger(__name__).debug("LLM planner failed: %s", e)
     # Honest fallback — let downstream emit a syntactically valid (if
     # semantically empty) plan with the question as a comment.
     return f"-- could not parse: {question}\nSELECT 1 AS placeholder"

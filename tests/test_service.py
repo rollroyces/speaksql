@@ -117,6 +117,52 @@ def test_service_diff_detects_null_ordering():
     assert any(d["category"] == "null_ordering" for d in body["differences"])
 
 
+def test_service_graph_sqlite(tmp_path):
+    """POST /v1/graph with a seeded SQLite file."""
+    import sqlite3
+
+    db = tmp_path / "svc.sqlite"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)")
+    con.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)")
+    con.commit()
+    con.close()
+
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/graph",
+        json={"db_path": str(db), "backend": "sqlite"},
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["nodes"] == 2
+    assert body["edges"] == 1
+    assert "<!doctype html>" in body["html"].lower()
+    assert "users" in body["graph"]["nodes"][0]["name"] or any(
+        n["name"] == "users" for n in body["graph"]["nodes"]
+    )
+
+
+def test_service_graph_rejects_bad_backend(tmp_path):
+    import sqlite3
+
+    db = tmp_path / "x.sqlite"
+    sqlite3.connect(str(db)).close()
+
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/graph",
+        json={"db_path": str(db), "backend": "oracle"},
+    )
+    assert r.status_code == 400
+
+
 def test_service_execute_missing_driver_400():
     """If the driver can't construct (missing creds or missing driver), surface a reason.
 

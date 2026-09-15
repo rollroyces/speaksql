@@ -1,0 +1,10 @@
+# Eval cases — one JSON object per line.
+# Each case has a natural-language `input` and the canonical SQL we expect.
+
+{"input": "count of orders", "expected": "SELECT COUNT(orders) AS cnt FROM events"}
+{"input": "top 5 revenue by country", "expected": "SELECT revenue, SUM(revenue) AS total FROM events GROUP BY revenue ORDER BY total DESC LIMIT 5"}
+{"input": "monthly amount by country", "expected": "SELECT DATE_TRUNC('month', created_at) AS month, SUM(amount) AS total FROM events GROUP BY month ORDER BY month"}
+{"input": "show all users", "expected": "SELECT * FROM users"}
+{"input": "count of orders per customer", "expected": "SELECT customer_id, COUNT(*) AS n FROM orders GROUP BY customer_id"}
+{"input": "monthly revenue from the orders table", "expected": "SELECT DATE_TRUNC('month', created_at) AS month, SUM(amount) AS revenue FROM orders GROUP BY month ORDER BY month"}
+{"input": "users who never placed an order", "expected": "SELECT u.* FROM users u LEFT JOIN orders o ON u.id = o.user_id WHERE o.id IS NULL"}

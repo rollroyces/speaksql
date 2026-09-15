@@ -130,3 +130,71 @@ def test_cli_diff_with_dialect():
     )
     assert r.exit_code == 0
     assert "No semantic differences" in r.output
+
+
+def test_cli_graph_text(tmp_path):
+    """speaksql graph with a seeded SQLite database, text output."""
+    import sqlite3
+
+    db = tmp_path / "graph.sqlite"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT)")
+    con.execute("CREATE TABLE posts (id INTEGER PRIMARY KEY, user_id INTEGER)")
+    con.commit()
+    con.close()
+
+    r = CliRunner().invoke(main, ["graph", str(db), "--backend", "sqlite"])
+    assert r.exit_code == 0
+    assert "2 tables" in r.output
+    assert "1 inferred joins" in r.output
+    assert "user_id" in r.output
+
+
+def test_cli_graph_html(tmp_path):
+    """speaksql graph --html writes a self-contained HTML file."""
+    import sqlite3
+
+    db = tmp_path / "graph.sqlite"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)")
+    con.commit()
+    con.close()
+
+    out_html = tmp_path / "graph.html"
+    r = CliRunner().invoke(
+        main,
+        [
+            "graph",
+            str(db),
+            "--backend",
+            "sqlite",
+            "--html",
+            str(out_html),
+        ],
+    )
+    assert r.exit_code == 0
+    assert out_html.exists()
+    assert "<!doctype html>" in out_html.read_text().lower()
+
+
+def test_cli_graph_json(tmp_path):
+    """speaksql graph --json emits a JSON graph object."""
+    import json as _json
+    import sqlite3
+
+    db = tmp_path / "graph.sqlite"
+    con = sqlite3.connect(str(db))
+    con.execute("CREATE TABLE users (id INTEGER PRIMARY KEY)")
+    con.execute("CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER)")
+    con.commit()
+    con.close()
+
+    r = CliRunner().invoke(
+        main, ["graph", str(db), "--backend", "sqlite", "--json"]
+    )
+    assert r.exit_code == 0
+    parsed = _json.loads(r.output)
+    assert "nodes" in parsed and "edges" in parsed
+    assert len(parsed["nodes"]) == 2
+    assert len(parsed["edges"]) == 1
