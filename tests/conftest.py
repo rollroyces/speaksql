@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
+import importlib.util
 import os
-import shutil
 import sys
 
 import pytest
@@ -15,14 +15,22 @@ if _SRC not in sys.path:
     sys.path.insert(0, _SRC)
 
 
-def pytest_collection_modifyitems(config, items):
-    """Skip service tests if fastapi isn't installed."""
-    if shutil.which("python") is None:
-        return
-    try:
-        import fastapi  # noqa: F401
-    except ImportError:
-        skip_service = pytest.mark.skip(reason="fastapi not installed")
-        for item in items:
-            if "service" in item.keywords:
-                item.add_marker(skip_service)
+_SERVICE_DEPS = ("fastapi", "starlette", "httpx")
+
+
+def _service_extras_available() -> bool:
+    return all(importlib.util.find_spec(name) for name in _SERVICE_DEPS)
+
+
+# Skip the entire `service` module if optional deps are absent so the
+# default test run is robust on either install profile.
+if not _service_extras_available():
+    pytest.skip(
+        "fastapi/starlette/httpx not installed; skipping service tests",
+        allow_module_level=True,
+    )
+
+
+@pytest.fixture(scope="session")
+def service_extras_available() -> bool:
+    return _service_extras_available()
