@@ -16,18 +16,31 @@ per-dialect SQL by hand.
 
 ## Why SpeakSQL?
 
-Every data team ends up writing the same query five different ways — once per
-warehouse. **SpeakSQL** lets you write it once in canonical ANSI SQL and
-transpile it into idiomatic SQL for each target:
+Every data team ends up writing the same query five different ways — once
+per warehouse. **SpeakSQL** lets you write it once in canonical ANSI SQL
+and transpile it into idiomatic SQL for each target.
 
-| Canonical | PostgreSQL | BigQuery | Spark / Databricks |
-|---|---|---|---|
-| `DATE_TRUNC('month', ts)` | `DATE_TRUNC('MONTH', ts)` | `DATE_TRUNC(ts, MONTH)` | `TRUNC(ts, 'MONTH')` |
-| `COUNT(*)` | `COUNT(*)` | `COUNT(*)` | `COUNT(*)` |
-| `ROW_NUMBER() OVER (...)` | `... NULLS LAST` | `...` | `...` |
+```mermaid
+graph LR
+    A["<b>Canonical ANSI</b><br/>DATE_TRUNC('month', ts)<br/>COUNT(*)<br/>LIMIT N"]:::canon
+    P["<b>PostgreSQL</b><br/>DATE_TRUNC('MONTH', ts)"]:::pg
+    B["<b>BigQuery</b><br/>DATE_TRUNC(ts, MONTH)"]:::bq
+    S["<b>Spark</b><br/>TRUNC(ts, 'MONTH')"]:::spark
+    M["<b>MySQL</b><br/>STR_TO_DATE(<br/>  CONCAT(YEAR(ts), ' ',<br/>  MONTH(ts), ' 1'),<br/>  '%Y %c %e')"]:::mysql
+    A --> P
+    A --> B
+    A --> S
+    A --> M
 
-*No more copy-pasting between Postgres and Snowflake. No more debugging
-`ILIKE` errors on BigQuery.*
+    classDef canon fill:#fef3c7,stroke:#92400e,color:#451a03
+    classDef pg fill:#dbeafe,stroke:#1e3a8a,color:#1e3a8a
+    classDef bq fill:#e0f2fe,stroke:#0c4a6e,color:#0c4a6e
+    classDef spark fill:#fee2e2,stroke:#7f1d1d,color:#7f1d1d
+    classDef mysql fill:#f3e8ff,stroke:#581c87,color:#581c87
+```
+
+*One canonical source → four dialect-specific outputs, with no
+copy-paste and no dialect-specific debugging.*
 
 ---
 
@@ -244,6 +257,33 @@ patterns covering `count of X`, `top N X by Y`, and `monthly X by Y`. When
 a query doesn't match, it returns a syntactically valid placeholder SQL
 with the original question preserved as a comment. **No fabrication.**
 
+```mermaid
+sequenceDiagram
+    participant User
+    participant NL as nl_to_canonical
+    participant Rules as Rule patterns
+    participant LLM as llm_to_canonical
+    participant Provider as OpenAI-compatible endpoint
+
+    User->>NL: "monthly active users"
+    alt Rule matches
+        NL->>Rules: match regex
+        Rules-->>NL: pattern + captured groups
+        NL-->>User: SELECT DATE_TRUNC(...)...
+    else No rule match
+        NL->>NL: Check SPEAKSQL_USE_LLM
+        alt LLM disabled
+            NL-->>User: "-- could not parse: ..."<br/>SELECT 1 AS placeholder
+        else LLM enabled
+            NL->>LLM: question
+            LLM->>Provider: POST /chat/completions<br/>(system prompt + few-shot)
+            Provider-->>LLM: canonical SQL
+            LLM-->>NL: canonical SQL
+            NL-->>User: canonical SQL
+        end
+    end
+```
+
 For more flexible NL handling, set `SPEAKSQL_USE_LLM=1` and configure
 a provider. SpeakSQL ships:
 
@@ -301,7 +341,53 @@ against a real LLM.
 
 Given a schema (from `Backend.introspect()`), SpeakSQL builds a JOIN
 graph by **preferring real FK constraints** and falling back to a name
-heuristic. The two layers:
+heuristic.
+
+Example — a real SpeakSQL-rendered graph for an ecommerce schema
+(users, orders, products, order_items, shipments, reviews) built from
+the FK constraints the database declares:
+
+<p align="center">
+  <a href="docs/join_graph_example/index.html">
+    <img src="docs/join_graph_example/join_graph.svg"
+         alt="SpeakSQL JOIN graph for an ecommerce schema"
+         width="800">
+  </a>
+</p>
+
+```mermaid
+flowchart TD
+    A[SchemaList<br/>tables + foreign_keys]:::input
+    B{Real FKs<br/>present?}:::decision
+    C["Use real FKs<br/>(_build_from_real_fks)"]:::real
+    D{"Singular-name<br/>FK pattern?"}:::decision
+    E["Add FK edge<br/>orders.user_id → users.id"]:::heuristic
+    F{"Same-name<br/>same-type<br/>NOT PK↔PK?"}:::decision
+    G["Add candidate edge"]:::heuristic
+    H[Final JoinGraph<br/>nodes + edges]:::output
+    X[Skip —<br/>PK↔PK noise]:::skip
+
+    A --> B
+    B -- yes --> C
+    B -- no --> D
+    D -- yes --> E
+    D -- no --> F
+    F -- yes --> G
+    F -- no --> X
+    C --> H
+    E --> H
+    G --> H
+    X --> H
+
+    classDef input fill:#fef3c7,stroke:#92400e
+    classDef decision fill:#fff7ed,stroke:#9a3412
+    classDef real fill:#dcfce7,stroke:#166534,color:#166534
+    classDef heuristic fill:#dbeafe,stroke:#1e3a8a
+    classDef skip fill:#fee2e2,stroke:#7f1d1d,color:#7f1d1d
+    classDef output fill:#f3e8ff,stroke:#581c87
+```
+
+Per-backend FK sources:
 
 1. **Real FK constraints (preferred):** SQLite `PRAGMA foreign_key_list`,
    Postgres `information_schema.referential_constraints` joined with
@@ -352,6 +438,55 @@ print(g.to_dict())
 Compare two SQL strings (possibly from different dialects) and see the
 **semantic** differences — not just textual ones:
 
+```mermaid
+stateDiagram-v2
+    [*] --> ParseBoth
+    ParseBoth --> Compare: parse with SQLGlot
+
+    state Compare {
+        [*] --> Projections
+        Projections --> FunctionCall: same fn,<br/>different args
+        Projections --> Literal: same value,<br/>different quoting
+        Projections --> Next: projections differ
+        FunctionCall --> Next
+        Literal --> Next
+
+        Next --> Where
+        Where --> Predicate: function rewrite<br/>detected
+        Where --> Structural: predicates differ
+        Predicate --> Out
+        Structural --> Out
+
+        Out --> OrderBy
+        OrderBy --> NullOrdering: NULLS FIRST/LAST
+        OrderBy --> DistinctSyntax: ASC/DESC
+        OrderBy --> Limit: TOP/LIMIT
+        NullOrdering --> [*]
+        DistinctSyntax --> [*]
+        Limit --> [*]
+
+        OrderBy --> Cast
+        Cast --> TypeName: DOUBLE vs FLOAT8
+        TypeName --> [*]
+
+        OrderBy --> From
+        From --> Structural: source tables differ
+    }
+
+    Compare --> Report
+    Report --> [*]
+```
+
+Categories detected:
+
+- `function_call` (same function, different call form)
+- `null_ordering` (NULLS FIRST/LAST)
+- `distinct_syntax` (TOP vs LIMIT, ASC vs DESC)
+- `type_name` (DOUBLE PRECISION vs FLOAT8)
+- `literal` (same value, different quoting)
+- `predicate` (different WHERE clause)
+- `structural` (different tables/projections)
+
 ```python
 import speaksql
 
@@ -371,11 +506,6 @@ Output:
      a: 'NULLS LAST'
      b: 'NULLS FIRST'  (null ordering differs)
 ```
-
-Detected categories: `function_call` (same function, different call form),
-`null_ordering` (NULLS FIRST/LAST), `distinct_syntax` (TOP vs LIMIT,
-ASC vs DESC), `type_name` (DOUBLE PRECISION vs FLOAT8), `literal`
-(quoting), `predicate`, `structural` (different tables/projections).
 
 CLI:
 
@@ -432,41 +562,69 @@ inherits from it or becomes a thin shim — callers don't notice.
 
 ## Architecture
 
-```
-NL question  ─┐
-              │
-canonical SQL ─┤
-              ▼
-    ┌─────────────────────────┐
-    │  Schema Discovery        │  per-dialect introspection
-    │   ├─ tables + columns    │  SQLite PRAGMA, DuckDB
-    │   └─ FK constraints      │  information_schema (Postgres, Snowflake),
-    └─────────┬───────────────┘  duckdb_constraints() (DuckDB), PRAGMA (SQLite)
-              ▼
-    ┌─────────────────────────┐
-    │  Schema Linking          │  NL → {tables, cols, predicates}
-    └─────────┬───────────────┘
-              ▼
-    ┌─────────────────────────┐
-    │  Canonical Plan (ANSI)   │  dialect-agnostic SQLGlot AST
-    └─────────┬───────────────┘
-              ▼
-    ┌─────────────────────────┐
-    │  Dialect Emitter         │  SQLGlot transpile + vendor dialects
-    │   └─ Hana dialect        │  local Postgres subclass
-    └─────────┬───────────────┘
-              ▼
-      Postgres | MySQL | T-SQL | Snowflake | BigQuery |
-      Spark | DuckDB | SQLite | HANA
+```mermaid
+flowchart TB
+    subgraph Input[" "]
+        Q["NL question<br/>or canonical SQL"]
+    end
 
-Plus three orthogonal tools:
+    subgraph Discover["Schema Discovery"]
+        I1["introspect():<br/>tables + columns"]:::core
+        I2["foreign_keys():<br/>FK constraints"]:::core
+    end
 
-  • LLM planner  — replaces the rule-based NL layer when
-    SPEAKSQL_USE_LLM=1. Stdlib urllib, no SDK, OpenAI-compatible.
-  • Semantic diff — compares two SQL strings AST-aware.
-  • JOIN graph   — uses real FKs first, name heuristic second.
-    Self-contained HTML output.
+    subgraph Plan["Planning"]
+        L["Schema Linking<br/>NL → tables, cols, predicates"]:::plan
+        C["Canonical Plan<br/>(dialect-agnostic AST)"]:::plan
+    end
+
+    subgraph Emit["Dialect Emission"]
+        E["SQLGlot transpile<br/>+ vendor dialect overrides"]:::emit
+        H["Hana dialect<br/>(local Postgres subclass)"]:::vendor
+    end
+
+    Q --> L
+    I1 --> L
+    I2 --> L
+    L --> C
+    C --> E
+    E --> H
+
+    E --> PG[(PostgreSQL)]
+    E --> MY[(MySQL)]
+    E --> TS[(T-SQL)]
+    E --> SF[(Snowflake)]
+    E --> BQ[(BigQuery)]
+    E --> SP[(Spark)]
+    E --> DU[(DuckDB)]
+    E --> SQ[(SQLite)]
+    E --> HA[(SAP HANA)]
+
+    subgraph Tools["Orthogonal tools"]
+        LL["LLM Planner<br/>(opt-in)"]:::tool
+        DF["Semantic Diff"]:::tool
+        JG["JOIN Graph<br/>(real FKs → heuristic)"]:::tool
+    end
+
+    Q -.->|if SPEAKSQL_USE_LLM=1| LL
+    Q -.rule.- DF
+    I1 -.fk.-> JG
+    I2 -.fk.-> JG
+
+    classDef core fill:#fef3c7,stroke:#92400e
+    classDef plan fill:#dbeafe,stroke:#1e3a8a
+    classDef emit fill:#dcfce7,stroke:#166534
+    classDef vendor fill:#fce7f3,stroke:#9d174d
+    classDef tool fill:#f3e8ff,stroke:#581c87
 ```
+
+Three orthogonal tools complement the transpile pipeline:
+
+- **LLM planner** — replaces the rule-based NL layer when
+  `SPEAKSQL_USE_LLM=1`. Stdlib `urllib`, no SDK, OpenAI-compatible.
+- **Semantic diff** — compares two SQL strings AST-aware.
+- **JOIN graph** — uses real FKs first, name heuristic second.
+  Self-contained HTML output.
 
 * The canonical plan is dialect-agnostic — you write ANSI SQL once.
 * The vendor dialects are narrow: only the things SQLGlot misses (HANA's

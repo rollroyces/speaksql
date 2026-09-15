@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width='1000' height='720' viewBox='0 0 1000 720' xmlns='http://www.w3.org/2000/svg'>
+  <line x1='500.0' y1='640.0' x2='742.4871130596428' y2='220.0' stroke='#94a3b8' stroke-width='1.5' data-shared='order_id'/>
+  <text x='621.2435565298214' y='430.0' font-size='10' fill='#475569' text-anchor='middle'>order_id</text>
+  <line x1='500.0' y1='640.0' x2='742.4871130596429' y2='499.99999999999994' stroke='#94a3b8' stroke-width='1.5' data-shared='product_id'/>
+  <text x='621.2435565298215' y='570.0' font-size='10' fill='#475569' text-anchor='middle'>product_id</text>
+  <line x1='742.4871130596428' y1='220.0' x2='257.51288694035725' y2='500.0000000000001' stroke='#94a3b8' stroke-width='1.5' data-shared='order_id'/>
+  <text x='500.0' y='360.00000000000006' font-size='10' fill='#475569' text-anchor='middle'>order_id</text>
+  <line x1='742.4871130596428' y1='220.0' x2='500.0' y2='80.0' stroke='#94a3b8' stroke-width='1.5' data-shared='user_id'/>
+  <text x='621.2435565298214' y='150.0' font-size='10' fill='#475569' text-anchor='middle'>user_id</text>
+  <line x1='742.4871130596429' y1='499.99999999999994' x2='257.5128869403572' y2='219.99999999999997' stroke='#94a3b8' stroke-width='1.5' data-shared='product_id'/>
+  <text x='500.0' y='359.99999999999994' font-size='10' fill='#475569' text-anchor='middle'>product_id</text>
+  <line x1='257.5128869403572' y1='219.99999999999997' x2='500.0' y2='80.0' stroke='#94a3b8' stroke-width='1.5' data-shared='user_id'/>
+  <text x='378.7564434701786' y='150.0' font-size='10' fill='#475569' text-anchor='middle'>user_id</text>
+  <g><rect x='420.0' y='50.0' width='160' height='60' rx='6' fill='#f1f5f9' stroke='#0f172a' stroke-width='1.2'/><text x='500.0' y='68.0' font-size='13' font-weight='600' text-anchor='middle' fill='#0f172a'>users</text><text x='500.0' y='86.0' font-size='10' text-anchor='middle' fill='#475569'>4 cols · 0 join</text></g>
+  <g><rect x='662.4871130596428' y='190.0' width='160' height='60' rx='6' fill='#f1f5f9' stroke='#0f172a' stroke-width='1.2'/><text x='742.4871130596428' y='208.0' font-size='13' font-weight='600' text-anchor='middle' fill='#0f172a'>orders</text><text x='742.4871130596428' y='226.0' font-size='10' text-anchor='middle' fill='#475569'>4 cols · 2 join</text></g>
+  <g><rect x='662.4871130596429' y='469.99999999999994' width='160' height='60' rx='6' fill='#f1f5f9' stroke='#0f172a' stroke-width='1.2'/><text x='742.4871130596429' y='487.99999999999994' font-size='13' font-weight='600' text-anchor='middle' fill='#0f172a'>products</text><text x='742.4871130596429' y='505.99999999999994' font-size='10' text-anchor='middle' fill='#475569'>3 cols · 1 join</text></g>
+  <g><rect x='420.0' y='610.0' width='160' height='60' rx='6' fill='#f1f5f9' stroke='#0f172a' stroke-width='1.2'/><text x='500.0' y='628.0' font-size='13' font-weight='600' text-anchor='middle' fill='#0f172a'>order_items</text><text x='500.0' y='646.0' font-size='10' text-anchor='middle' fill='#475569'>4 cols · 2 join</text></g>
+  <g><rect x='177.51288694035725' y='470.0000000000001' width='160' height='60' rx='6' fill='#f1f5f9' stroke='#0f172a' stroke-width='1.2'/><text x='257.51288694035725' y='488.0000000000001' font-size='13' font-weight='600' text-anchor='middle' fill='#0f172a'>shipments</text><text x='257.51288694035725' y='506.0000000000001' font-size='10' text-anchor='middle' fill='#475569'>4 cols · 0 join</text></g>
+  <g><rect x='177.5128869403572' y='189.99999999999997' width='160' height='60' rx='6' fill='#f1f5f9' stroke='#0f172a' stroke-width='1.2'/><text x='257.5128869403572' y='207.99999999999997' font-size='13' font-weight='600' text-anchor='middle' fill='#0f172a'>reviews</text><text x='257.5128869403572' y='225.99999999999997' font-size='10' text-anchor='middle' fill='#475569'>5 cols · 1 join</text></g>
+  </svg>
