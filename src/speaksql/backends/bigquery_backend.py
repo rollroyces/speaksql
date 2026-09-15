@@ -68,5 +68,13 @@ class BigQueryBackend:
             return []
         return [tuple(row.values()) for row in result]
 
+    def foreign_keys(self) -> tuple:
+        """BigQuery does not support FK constraints in DDL — always empty.
+
+        Returned as a no-op for protocol completeness. Schema linking
+        for BigQuery will rely on the name-based JOIN heuristic instead.
+        """
+        return ()
+
     def close(self) -> None:
         self._client.close()

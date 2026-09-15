@@ -263,20 +263,25 @@ against a real LLM.
 ### JOIN graph
 
 Given a schema (from `Backend.introspect()`), SpeakSQL builds a JOIN
-graph by looking for FK-shaped column pairs: a column named
-`{singular(other)}_id` matching the other table's PK. The heuristic:
+graph by **preferring real FK constraints** and falling back to a name
+heuristic. The two layers:
 
-1. **FK by name (strongest):** `orders.user_id` ↔ `users.id` — clear FK.
-2. **Same-name shared column (weaker):** both tables have `foo` of the
-   same type, but **not** PK↔PK of the same name (which is identity,
-   not a join).
-3. **Type mismatch disqualifies:** `description TEXT` vs
-   `description INTEGER` aren't linked.
+1. **Real FK constraints (preferred):** SQLite `PRAGMA foreign_key_list`,
+   Postgres `information_schema.referential_constraints` joined with
+   `key_column_usage`, DuckDB `duckdb_constraints()`, Snowflake
+   `information_schema.referential_constraints` (informational only —
+   often empty). BigQuery has no FK concept and returns `()`.
+2. **Name-based heuristic (fallback):** when no FKs are available, we
+   look for `{singular(other)}_id` matching the other table's PK. PK↔PK
+   same-name noise is filtered out. Type mismatches disqualify.
 
 CLI:
 
 ```bash
 speaksql graph ./analytics.sqlite --backend sqlite --html ./graph.html
+# 4 tables · 2 inferred joins (2 from declared FKs)
+#   order_items <-> orders  via order_id
+#   orders <-> users  via user_id
 ```
 
 The HTML is self-contained — no JS, no external CSS, no CDN — and
@@ -297,13 +302,12 @@ from speaksql.backends import backend_for
 
 be = backend_for("sqlite", path="./analytics.sqlite")
 schema = be.introspect()
+fks = be.foreign_keys()  # declared FK constraints
 be.close()
 
-g = speaksql.build_join_graph(schema)
+g = speaksql.build_join_graph(schema.with_foreign_keys(fks))
+# pass use_real_fks=False to force the name heuristic
 print(g.to_dict())
-# Write self-contained HTML
-with open("graph.html", "w") as f:
-    f.write(speaksql.render_html(g, title="analytics"))
 ```
 
 ### Semantic diff
@@ -466,8 +470,10 @@ speaksql/
 
 All roadmap items from the original v0.1 launch are shipped. New ideas:
 
-- [ ] Read real FK constraints from `information_schema.referential_constraints`
-      instead of name heuristics
+- [x] ~~Read real FK constraints from `information_schema.referential_constraints`
+      instead of name heuristics~~ — shipped; SQLite `PRAGMA`, Postgres
+      `information_schema`, DuckDB `duckdb_constraints()`, Snowflake
+      `information_schema`, BigQuery (no-op)
 - [ ] Custom Snowflake / BigQuery / HANA vendor overrides (functions,
       types, syntactic idioms)
 - [ ] Streaming LLM provider for long SQL generation

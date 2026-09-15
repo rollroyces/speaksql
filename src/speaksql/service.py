@@ -231,10 +231,12 @@ def graph(req: GraphRequest) -> GraphResponse:
 
     try:
         schema = be.introspect()
+        fks = be.foreign_keys()
     finally:
         be.close()
 
-    g = build_join_graph(schema)
+    enriched = schema.with_foreign_keys(fks)
+    g = build_join_graph(enriched)
     title = req.title or f"JOIN Graph — {req.db_path}"
     return GraphResponse(
         db_path=req.db_path,

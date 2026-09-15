@@ -35,8 +35,26 @@ class TableInfo:
 
 
 @dataclass(frozen=True)
+class ForeignKeyInfo:
+    """A foreign key relationship between two columns.
+
+    `from_table` / `from_column` identify the referencing side (the
+    child / many side), and `to_table` / `to_column` identify the
+    referenced side (the parent / one side). `to_table` may be a
+    qualified name (`schema.table`) for cross-schema FKs.
+    """
+
+    from_table: str
+    from_column: str
+    to_table: str
+    to_column: str
+    constraint_name: str | None = None
+
+
+@dataclass(frozen=True)
 class SchemaList:
     tables: tuple[TableInfo, ...]
+    foreign_keys: tuple[ForeignKeyInfo, ...] = field(default_factory=tuple)
 
     def find(self, name: str) -> TableInfo | None:
         """Find a table by case-insensitive name match (unqualified)."""
@@ -46,6 +64,10 @@ class SchemaList:
                 return t
         return None
 
+    def with_foreign_keys(self, fks: tuple[ForeignKeyInfo, ...]) -> SchemaList:
+        """Return a copy with FK info attached."""
+        return SchemaList(tables=self.tables, foreign_keys=fks)
+
 
 class Backend(Protocol):
     """A dialect backend capable of introspection + execution."""
@@ -53,8 +75,16 @@ class Backend(Protocol):
     name: str
 
     def introspect(self) -> SchemaList: ...
-
     def execute(self, sql: str) -> list[tuple]: ...
+
+    def foreign_keys(self) -> tuple[ForeignKeyInfo, ...]:
+        """Return FK constraints from the live database.
+
+        Default implementation returns an empty tuple; backends with
+        FK support override this. Use `backend.introspect()` plus
+        `backend.foreign_keys()` to build a complete `SchemaList`.
+        """
+        return ()
 
 
 def introspect(dialect: str) -> SchemaList:
@@ -95,12 +125,19 @@ def _demo_schema(dialect: str) -> SchemaList:
             ColumnInfo("signup_at", "TIMESTAMP"),
         ),
     )
-    return SchemaList(tables=(events, users))
+    fk = ForeignKeyInfo(
+        from_table="events",
+        from_column="user_id",
+        to_table="users",
+        to_column="id",
+    )
+    return SchemaList(tables=(events, users), foreign_keys=(fk,))
 
 
 __all__ = [
     "Backend",
     "ColumnInfo",
+    "ForeignKeyInfo",
     "SchemaList",
     "TableInfo",
     "introspect",

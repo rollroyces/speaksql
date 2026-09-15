@@ -84,8 +84,63 @@ def _table_key(t: TableInfo) -> str:
     return f"{t.schema}.{t.name}" if t.schema else t.name
 
 
-def build_join_graph(schema: SchemaList) -> JoinGraph:
-    """Build a JOIN graph using name-based FK heuristics.
+def build_join_graph(
+    schema: SchemaList, *, use_real_fks: bool = True
+) -> JoinGraph:
+    """Build a JOIN graph using real FK constraints first, name heuristic second.
+
+    Strategy:
+
+    1. **Real FK constraints (preferred):** if `schema.foreign_keys` is
+       non-empty, build the graph from those. Real FKs are the gold
+       standard — they reflect what the database actually enforces
+       (or, for Snowflake, what's been declared).
+    2. **Name-based heuristic (fallback):** when no FKs are available,
+       fall back to the column-name heuristic: `{singular(other)}_id`
+       matching the other table's PK. PK↔PK same-name noise is filtered
+       out.
+
+    Pass `use_real_fks=False` to force the heuristic even when real FKs
+    are present (useful for testing the heuristic independently).
+    """
+    if use_real_fks and schema.foreign_keys:
+        return _build_from_real_fks(schema)
+    return _build_from_heuristic(schema)
+
+
+def _build_from_real_fks(schema: SchemaList) -> JoinGraph:
+    """Build the graph directly from declared FK constraints."""
+    # Group FK columns by table-pair so each edge carries its full set
+    edges_by_pair: dict[tuple[str, str], list[str]] = {}
+    for fk in schema.foreign_keys:
+        pair = tuple(sorted((fk.from_table, fk.to_table)))
+        edges_by_pair.setdefault(pair, []).append(fk.from_column)
+
+    # Track join columns per node
+    join_cols_per_node: dict[str, set[str]] = {}
+    edges: list[JoinEdge] = []
+    for (src, tgt), cols in sorted(edges_by_pair.items()):
+        # Sort cols for determinism
+        edges.append(JoinEdge(src, tgt, tuple(sorted(cols))))
+        for c in cols:
+            join_cols_per_node.setdefault(src, set()).add(c)
+            join_cols_per_node.setdefault(tgt, set())
+
+    nodes = tuple(
+        TableNode(
+            name=t.name,
+            schema=t.schema,
+            catalog=t.catalog,
+            columns=t.columns,
+            join_columns=tuple(sorted(join_cols_per_node.get(_table_key(t), set()))),
+        )
+        for t in schema.tables
+    )
+    return JoinGraph(nodes=nodes, edges=tuple(edges))
+
+
+def _build_from_heuristic(schema: SchemaList) -> JoinGraph:
+    """Build the JOIN graph using name-based FK heuristics.
 
     Heuristics, in order of strength:
 
@@ -100,8 +155,8 @@ def build_join_graph(schema: SchemaList) -> JoinGraph:
     3. **Type mismatch disqualifies** any candidate — `description TEXT`
        vs `description INTEGER` shouldn't be linked.
 
-    This is still a heuristic — real FK constraints from information_schema
-    are the gold standard and would be preferred when available.
+    This is still a heuristic — real FK constraints are the gold
+    standard and would be preferred when available.
     """
     tables = schema.tables
 

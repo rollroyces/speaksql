@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from speaksql.introspect import ColumnInfo, SchemaList, TableInfo
+from speaksql.introspect import ColumnInfo, ForeignKeyInfo, SchemaList, TableInfo
 
 
 class PostgresBackend:
@@ -86,6 +86,48 @@ class PostgresBackend:
             if cur.description is None:
                 return []
             return [tuple(row) for row in cur.fetchall()]
+
+    def foreign_keys(self) -> tuple[ForeignKeyInfo, ...]:
+        """Read FKs from information_schema.referential_constraints.
+
+        Postgres exposes both the constraint itself and the column pairs
+        via the standard information_schema. Multi-column FKs are
+        returned as one entry per column pair (with constraint_name
+        preserved for grouping if you need it).
+        """
+        with self._conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT
+                    rc.constraint_name,
+                    kcu.table_schema || '.' || kcu.table_name AS from_table,
+                    kcu.column_name AS from_column,
+                    ccu.table_schema || '.' || ccu.table_name AS to_table,
+                    ccu.column_name AS to_column
+                FROM information_schema.referential_constraints rc
+                JOIN information_schema.key_column_usage kcu
+                  ON rc.constraint_name = kcu.constraint_name
+                  AND rc.constraint_schema = kcu.constraint_schema
+                JOIN information_schema.constraint_column_usage ccu
+                  ON rc.unique_constraint_name = ccu.constraint_name
+                  AND rc.unique_constraint_schema = ccu.constraint_schema
+                WHERE kcu.table_schema NOT IN ('pg_catalog', 'information_schema')
+                ORDER BY kcu.table_name, kcu.ordinal_position
+                """
+            )
+            rows = cur.fetchall()
+        out: list[ForeignKeyInfo] = []
+        for cname, from_table, from_col, to_table, to_col in rows:
+            out.append(
+                ForeignKeyInfo(
+                    from_table=from_table,
+                    from_column=from_col,
+                    to_table=to_table,
+                    to_column=to_col,
+                    constraint_name=cname,
+                )
+            )
+        return tuple(out)
 
     def close(self) -> None:
         self._conn.close()

@@ -8,7 +8,7 @@ non-SQLite backend for local roundtrips. No server required.
 
 from __future__ import annotations
 
-from speaksql.introspect import ColumnInfo, SchemaList, TableInfo
+from speaksql.introspect import ColumnInfo, ForeignKeyInfo, SchemaList, TableInfo
 
 
 class DuckDBBackend:
@@ -85,5 +85,51 @@ class DuckDBBackend:
             return []
         return [tuple(row) for row in result.fetchall()]
 
+    def foreign_keys(self) -> tuple[ForeignKeyInfo, ...]:
+        """Read FKs from DuckDB's duckdb_constraints() system function.
+
+        Returns a list of FKs whose constraint_type is 'FOREIGN KEY'.
+        DuckDB exposes referenced_table and referenced_column_names
+        directly — unlike SQLite's PRAGMA, no separate lookup needed.
+        """
+        rows = self._conn.execute(
+            """
+            SELECT schema_name, table_name, constraint_column_names,
+                   referenced_table, referenced_column_names
+            FROM duckdb_constraints()
+            WHERE constraint_type = 'FOREIGN KEY'
+              AND table_name NOT LIKE 'sqlite_%'
+            """
+        ).fetchall()
+        out: list[ForeignKeyInfo] = []
+        for schema, table, from_cols, ref_table, ref_cols in rows:
+            # DuckDB stores these as Python lists via the duckdb driver.
+            from_list = _as_list(from_cols)
+            ref_list = _as_list(ref_cols)
+            if not from_list or not ref_list:
+                continue
+            # Multi-column FKs: one entry per column pair
+            for fc, rc in zip(from_list, ref_list):
+                fq_table = f"{schema}.{table}" if schema else table
+                fq_ref = f"{schema}.{ref_table}" if schema else ref_table
+                out.append(
+                    ForeignKeyInfo(
+                        from_table=fq_table,
+                        from_column=fc,
+                        to_table=fq_ref,
+                        to_column=rc,
+                    )
+                )
+        return tuple(out)
+
     def close(self) -> None:
         self._conn.close()
+
+
+def _as_list(v: object) -> list[str]:
+    """Coerce duckdb array value to a Python list of strings."""
+    if isinstance(v, list):
+        return [str(x) for x in v]
+    if isinstance(v, tuple):
+        return [str(x) for x in v]
+    return []

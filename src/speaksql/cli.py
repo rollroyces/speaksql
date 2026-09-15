@@ -189,8 +189,9 @@ def _maybe_execute(
 def graph(db_path: str, backend: str, html_out: str | None, as_json: bool) -> None:
     """Build a JOIN graph from a SQLite (or DuckDB) database file.
 
-    Connects to the database, reads its schema, infers join candidates,
-    and prints either JSON, text, or writes an HTML visualization.
+    Connects to the database, reads its schema + declared foreign keys,
+    infers join candidates, and prints either JSON, text, or writes
+    an HTML visualization.
     """
     from speaksql.backends import backend_for
     from speaksql.graph import build_join_graph, render_html
@@ -202,10 +203,12 @@ def graph(db_path: str, backend: str, html_out: str | None, as_json: bool) -> No
     be = backend_for(backend, path=db_path)
     try:
         schema = be.introspect()
+        fks = be.foreign_keys()
     finally:
         be.close()
 
-    g = build_join_graph(schema)
+    enriched = schema.with_foreign_keys(fks)
+    g = build_join_graph(enriched)
     if as_json:
         import json as _json
         click.echo(_json.dumps(g.to_dict(), indent=2))
@@ -215,7 +218,8 @@ def graph(db_path: str, backend: str, html_out: str | None, as_json: bool) -> No
         click.echo(f"wrote {html_out}")
         return
     # Text fallback
-    click.echo(f"{len(g.nodes)} tables · {len(g.edges)} inferred joins")
+    real = sum(1 for _ in fks)
+    click.echo(f"{len(g.nodes)} tables · {len(g.edges)} inferred joins ({real} from declared FKs)")
     for e in sorted(g.edges, key=lambda e: (e.source, e.target)):
         click.echo(f"  {e.source} <-> {e.target}  via {', '.join(e.columns)}")
 
