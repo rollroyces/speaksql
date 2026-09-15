@@ -39,10 +39,20 @@ transpile it into idiomatic SQL for each target:
   for battle-tested parsing.
 - 🛠️ **Three surfaces** — Python library, CLI, and FastAPI service from one
   install.
-- ✅ **30 unit + integration tests** — including real SQLite roundtrips.
-- 🎯 **Honest about limits** — HANA has no upstream SQLGlot dialect; we
-  route through PostgreSQL emission (HANA is broadly ANSI-compatible) and
-  flag known deltas. No black boxes.
+- 🔌 **Live backends** — actually execute transpiled SQL against SQLite,
+  DuckDB, Postgres, Snowflake, or BigQuery. Real FK constraints are
+  read from the database and used to build JOIN graphs.
+- 🧠 **LLM planner** — rule-based by default; opt-in via
+  `SPEAKSQL_USE_LLM=1` for any OpenAI-compatible endpoint (no SDK).
+- 🔍 **Semantic diff** — compare two SQL strings and see *why* they're
+  different (NULLS FIRST/LAST, ASC/DESC, TOP/LIMIT, function-call rewrites,
+  type aliases, structural). Not just textual.
+- 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
+  + FK metadata.
+- ✅ **121 tests passing** — unit + integration, including live SQLite
+  and DuckDB roundtrips.
+- 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
+  lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
 - 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
   license available.
 
@@ -58,6 +68,11 @@ pip install speaksql
 
 ```bash
 pip install speaksql[service]   # FastAPI + Uvicorn for the HTTP service
+pip install speaksql[postgres]  # psycopg driver
+pip install speaksql[duckdb]    # in-process DuckDB driver (great for tests)
+pip install speaksql[snowflake] # snowflake-connector-python
+pip install speaksql[bigquery]  # google-cloud-bigquery
+pip install speaksql[backends]  # all four of the above
 pip install speaksql[dev]       # pytest + ruff + mypy
 ```
 
@@ -124,9 +139,23 @@ speaksql ask -d duckdb --sql \
   --db-path /tmp/events.duckdb \
   --json
 
+# Semantic diff between two SQL strings
+speaksql diff "SELECT id FROM t ORDER BY id ASC NULLS LAST" \
+            "SELECT id FROM t ORDER BY id ASC" --json
+
+# JOIN graph from a SQLite database
+speaksql graph ./analytics.sqlite --backend sqlite --html ./graph.html
+
 # List supported dialects
 speaksql dialects
 ```
+
+| Subcommand | Purpose |
+|---|---|
+| `ask` | Transpile NL or canonical SQL to one or more dialects; optionally execute |
+| `diff` | Compare two SQL strings semantically (NULLS, ASC/DESC, function rewrites, etc.) |
+| `graph` | Build a JOIN graph from a SQLite/DuckDB file; emit JSON, text, or HTML |
+| `dialects` | Print all supported dialect identifiers |
 
 ### HTTP service
 
@@ -162,6 +191,14 @@ curl -X POST http://localhost:8000/v1/execute \
 
 Returns `row_count` + `rows` (capped at 100), with datetime/Decimal values
 ISO-formatted for clean JSON parsing.
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/v1/ask` | POST | Transpile SQL or NL to one or more dialects |
+| `/v1/execute` | POST | Transpile + execute on a live backend (sqlite/duckdb/postgres/snowflake/bigquery) |
+| `/v1/diff` | POST | Compare two SQL strings semantically; returns `{identical, differences}` |
+| `/v1/graph` | POST | Build a JOIN graph from a SQLite/DuckDB file; returns JSON + HTML |
+| `/v1/dialects` | GET | List supported dialect identifiers |
 
 ### Live backends
 
@@ -361,17 +398,17 @@ curl -X POST http://localhost:8000/v1/diff \
 
 ## Supported dialects
 
-| Dialect | Identifier | Aliases | Status |
-|---|---|---|---|
-| PostgreSQL | `postgres` | — | ✅ native |
-| MySQL | `mysql` | — | ✅ native |
-| SQL Server | `tsql` | `mssql`, `sqlserver` | ✅ native |
-| Snowflake | `snowflake` | — | ✅ native |
-| BigQuery | `bigquery` | — | ✅ native |
-| Databricks / Spark | `spark` | `databricks` | ✅ native |
-| DuckDB | `duckdb` | — | ✅ native |
-| SQLite | `sqlite` | — | ✅ native (bundled backend) |
-| SAP HANA | `hana` | `saphana` | ✅ vendor (see [HANA dialect](#sap-hana-hana)) |
+| Dialect | Identifier | Aliases | Status | Live FK introspection |
+|---|---|---|---|---|
+| PostgreSQL | `postgres` | — | ✅ native + backend | ✅ `information_schema.referential_constraints` |
+| MySQL | `mysql` | — | ✅ native (transpile only) | n/a (no MySQL driver shipped) |
+| SQL Server | `tsql` | `mssql`, `sqlserver` | ✅ native (transpile only) | n/a (no SQL Server driver shipped) |
+| Snowflake | `snowflake` | — | ✅ native + backend | ✅ informational only — often empty |
+| BigQuery | `bigquery` | — | ✅ native + backend | ❌ no FK concept in BigQuery DDL |
+| Databricks / Spark | `spark` | `databricks` | ✅ native (transpile only) | n/a (no Spark driver shipped) |
+| DuckDB | `duckdb` | — | ✅ native + backend | ✅ `duckdb_constraints()` |
+| SQLite | `sqlite` | — | ✅ native + backend (bundled) | ✅ `PRAGMA foreign_key_list` |
+| SAP HANA | `hana` | `saphana` | ✅ vendor (see [HANA dialect](#sap-hana-hana)) | ❌ not yet exposed |
 
 ### SAP HANA (`hana`)
 
@@ -397,10 +434,14 @@ inherits from it or becomes a thin shim — callers don't notice.
 
 ```
 NL question  ─┐
-               ▼
+              │
+canonical SQL ─┤
+              ▼
     ┌─────────────────────────┐
     │  Schema Discovery        │  per-dialect introspection
-    └─────────┬───────────────┘
+    │   ├─ tables + columns    │  SQLite PRAGMA, DuckDB
+    │   └─ FK constraints      │  information_schema (Postgres, Snowflake),
+    └─────────┬───────────────┘  duckdb_constraints() (DuckDB), PRAGMA (SQLite)
               ▼
     ┌─────────────────────────┐
     │  Schema Linking          │  NL → {tables, cols, predicates}
@@ -411,16 +452,26 @@ NL question  ─┐
     └─────────┬───────────────┘
               ▼
     ┌─────────────────────────┐
-    │  Dialect Emitter         │  SQLGlot transpile + override map
+    │  Dialect Emitter         │  SQLGlot transpile + vendor dialects
+    │   └─ Hana dialect        │  local Postgres subclass
     └─────────┬───────────────┘
               ▼
       Postgres | MySQL | T-SQL | Snowflake | BigQuery |
       Spark | DuckDB | SQLite | HANA
+
+Plus three orthogonal tools:
+
+  • LLM planner  — replaces the rule-based NL layer when
+    SPEAKSQL_USE_LLM=1. Stdlib urllib, no SDK, OpenAI-compatible.
+  • Semantic diff — compares two SQL strings AST-aware.
+  • JOIN graph   — uses real FKs first, name heuristic second.
+    Self-contained HTML output.
 ```
 
 * The canonical plan is dialect-agnostic — you write ANSI SQL once.
-* The override map is narrow: only the things SQLGlot misses (HANA-specific
-  functions, T-SQL edge cases). The rest of the work is done by SQLGlot.
+* The vendor dialects are narrow: only the things SQLGlot misses (HANA's
+  `MAP` arity, T-SQL edge cases, BigQuery FK-less introspection). The
+  rest of the work is done by SQLGlot.
 
 ---
 
@@ -430,9 +481,10 @@ NL question  ─┐
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 30 tests
+uv run pytest            # 121 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
+PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
 ```
 
 **Project layout:**
@@ -440,44 +492,54 @@ uv run python examples/demo_all_dialects.py
 ```
 speaksql/
 ├── src/speaksql/
-│   ├── core.py          # plan() / emit() / transpile()
-│   ├── introspect.py    # schema discovery
-│   ├── nl.py            # rule-based NL → canonical SQL
-│   ├── cli.py           # `speaksql` command
-│   ├── service.py       # FastAPI app (optional)
-│   ├── backends/        # dialect-specific DB drivers
-│   ├── dialects/        # override modules
-│   └── exceptions.py
-├── tests/               # pytest, 30 tests across 7 files
-├── examples/            # demo scripts
-└── .github/workflows/   # CI: Python 3.11, 3.12, 3.13
+│   ├── core.py                # plan() / emit() / transpile()
+│   ├── introspect.py          # SchemaList + ForeignKeyInfo
+│   ├── nl.py                  # rule-based NL → canonical SQL (with LLM fallback)
+│   ├── llm.py                 # LLMProvider, MockProvider, OpenAICompatibleProvider
+│   ├── diff.py                # semantic_diff + DiffEntry
+│   ├── graph.py               # JOIN graph builder + HTML renderer
+│   ├── cli.py                 # `speaksql` command (ask, diff, graph, dialects)
+│   ├── service.py             # FastAPI app (optional)
+│   ├── exceptions.py
+│   ├── backends/              # per-dialect DB drivers (SQLite, DuckDB,
+│   │                          #   Postgres, Snowflake, BigQuery)
+│   └── dialects/              # vendor dialects (hana.py)
+├── tests/                     # 121 tests across 19 files
+├── examples/
+│   ├── demo_all_dialects.py
+│   └── llm_eval/              # eval harness + eval_set.jsonl
+└── .github/workflows/         # CI: Python 3.11, 3.12, 3.13
 ```
 
 ---
 
 ## Roadmap
 
+All five items from the original v0.1 roadmap are shipped:
+
 - [x] ~~Real HANA dialect~~ — shipped via `src/speaksql/dialects/hana.py`
       (vendor dialect subclassing Postgres)
 - [x] ~~Postgres / Snowflake / BigQuery / DuckDB backends~~ — shipped
-      via per-dialect extras
+      via per-dialect extras (`[postgres]`, `[duckdb]`, `[snowflake]`,
+      `[bigquery]`, `[backends]`)
 - [x] ~~LLM-backed NL planner behind a feature flag~~ — shipped via
       `src/speaksql/llm.py` (`SPEAKSQL_USE_LLM=1`)
 - [x] ~~Semantic diff mode between two dialect emissions~~ — shipped
       via `src/speaksql/diff.py` (`speaksql diff`, `/v1/diff`)
 - [x] ~~JOIN graph visualizer for the linked schema~~ — shipped via
       `src/speaksql/graph.py` (`speaksql graph`, `/v1/graph`)
-
-All roadmap items from the original v0.1 launch are shipped. New ideas:
-
 - [x] ~~Read real FK constraints from `information_schema.referential_constraints`
       instead of name heuristics~~ — shipped; SQLite `PRAGMA`, Postgres
       `information_schema`, DuckDB `duckdb_constraints()`, Snowflake
       `information_schema`, BigQuery (no-op)
+
+New ideas being considered:
+
 - [ ] Custom Snowflake / BigQuery / HANA vendor overrides (functions,
       types, syntactic idioms)
+- [ ] MySQL and SQL Server backends (currently transpile-only)
 - [ ] Streaming LLM provider for long SQL generation
-- [ ] WebSocket /v1/ask endpoint with partial-response streaming
+- [ ] WebSocket `/v1/ask` endpoint with partial-response streaming
 
 ---
 
@@ -500,5 +562,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 30 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 121 tests green</sub>
 </p>
