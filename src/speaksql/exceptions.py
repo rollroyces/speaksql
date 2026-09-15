@@ -26,6 +26,14 @@ class IntrospectionError(SpeakSQLError):
     """Raised when schema introspection fails."""
 
 
+class BackendError(SpeakSQLError):
+    """Raised when a backend driver is unavailable or connection fails.
+
+    Surfaces a user-actionable message (e.g. "pip install speaksql[postgres]")
+    rather than an opaque ImportError from inside a driver.
+    """
+
+
 # Local import to avoid circular dependency with core
 SUPPORTED_DIALECTS_LIST = frozenset(
     {

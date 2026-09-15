@@ -28,5 +28,10 @@ def test_backend_factory():
 
 
 def test_unsupported_backend_dialect():
-    with pytest.raises(NotImplementedError):
-        backend_for("postgres")
+    """Oracle/MySQL aren't bundled — backend_for() must surface that cleanly."""
+    from speaksql.exceptions import UnsupportedDialectError
+
+    with pytest.raises(UnsupportedDialectError):
+        backend_for("oracle")
+    with pytest.raises(UnsupportedDialectError):
+        backend_for("mysql")

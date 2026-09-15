@@ -117,6 +117,13 @@ speaksql ask -d postgres -d snowflake --sql \
 # JSON output (for piping into other tools)
 speaksql ask "top 5 country by amount" --json
 
+# Transpile AND execute on a live backend
+speaksql ask -d duckdb --sql \
+  "SELECT SUM(amount) AS total FROM events" \
+  --execute-on duckdb \
+  --db-path /tmp/events.duckdb \
+  --json
+
 # List supported dialects
 speaksql dialects
 ```
@@ -128,6 +135,8 @@ pip install speaksql[service]
 uvicorn speaksql.service:app --reload
 ```
 
+Transpile only:
+
 ```bash
 curl -X POST http://localhost:8000/v1/ask \
   -H 'content-type: application/json' \
@@ -138,15 +147,57 @@ curl -X POST http://localhost:8000/v1/ask \
       }'
 ```
 
-```json
-{
-  "canonical": "SELECT DATE_TRUNC('month', created_at) AS m, SUM(amount) AS total FROM events GROUP BY m",
-  "results": {
-    "postgres": "SELECT\n  DATE_TRUNC('MONTH', created_at) AS m, ...",
-    "snowflake": "SELECT\n  DATE_TRUNC('MONTH', created_at) AS m, ...",
-    "bigquery": "SELECT\n  DATE_TRUNC(created_at, MONTH) AS m, ..."
-  }
-}
+Transpile **and execute** on a live backend (requires the matching driver extra):
+
+```bash
+curl -X POST http://localhost:8000/v1/execute \
+  -H 'content-type: application/json' \
+  -d '{
+        "question": "SELECT DATE_TRUNC('"'"'month'"'"', created_at) AS m, SUM(amount) AS total FROM events GROUP BY m ORDER BY m",
+        "is_sql": true,
+        "backend": "duckdb",
+        "db_path": "/tmp/events.duckdb"
+      }'
+```
+
+Returns `row_count` + `rows` (capped at 100), with datetime/Decimal values
+ISO-formatted for clean JSON parsing.
+
+### Live backends
+
+In addition to transpilation, SpeakSQL ships live-driver backends so you can
+verify the emitted SQL against a real engine:
+
+| Dialect | Install | Import |
+|---|---|---|
+| SQLite | (base install) | `from speaksql.backends import backend_for; backend_for("sqlite")` |
+| DuckDB | `pip install speaksql[duckdb]` | `backend_for("duckdb")` |
+| PostgreSQL | `pip install speaksql[postgres]` | `backend_for("postgres", host=..., dbname=..., user=..., password=...)` |
+| Snowflake | `pip install speaksql[snowflake]` | `backend_for("snowflake", user=..., password=..., account=..., warehouse=...)` |
+| BigQuery | `pip install speaksql[bigquery]` | `backend_for("bigquery", project=...)` |
+| All four | `pip install speaksql[backends]` | — |
+
+Every backend implements the same `Backend` protocol: `introspect()` returns a
+`SchemaList`, `execute(sql)` returns `list[tuple]`, `close()` shuts the
+connection. Roundtrip example:
+
+```python
+import speaksql
+from speaksql.backends import backend_for
+
+be = backend_for("duckdb")  # or "sqlite", "postgres", ...
+be.execute("CREATE TABLE events (id INT, amount DOUBLE)")
+be.execute("INSERT INTO events VALUES (1, 100.0), (2, 200.0)")
+
+canonical = "SELECT SUM(amount) AS total FROM events"
+results = speaksql.transpile(canonical, targets=("duckdb",))
+print(be.execute(results["duckdb"]))
+# [(300.0,)]
+
+schema = be.introspect()
+for t in schema.tables:
+    print(f"{t.schema}.{t.name}: {[c.name for c in t.columns]}")
+# main.events: ['id', 'amount']
 ```
 
 ---

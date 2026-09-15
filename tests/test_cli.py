@@ -37,9 +37,51 @@ def test_cli_ask_json():
     assert r.exit_code == 0
     import json
     parsed = json.loads(r.output)
-    assert "postgres" in parsed
+    assert parsed["canonical"] == "SELECT 1"
+    assert "postgres" in parsed["results"]
 
 
 def test_cli_missing_question_errors():
     r = CliRunner().invoke(main, ["ask"])
     assert r.exit_code != 0
+
+
+def test_cli_ask_execute_duckdb(tmp_path):
+    """Execute the transpiled SQL on a seeded DuckDB file."""
+    if not __import__("importlib").util.find_spec("duckdb"):
+        import pytest
+        pytest.skip("duckdb not installed")
+
+    import duckdb
+
+    db = tmp_path / "events.duckdb"
+    con = duckdb.connect(str(db))
+    con.execute(
+        "CREATE TABLE events (id INTEGER, country TEXT, amount DOUBLE, created_at TIMESTAMP)"
+    )
+    con.execute(
+        "INSERT INTO events VALUES (1, 'JP', 100.0, '2026-01-15'), (2, 'US', 150.0, '2026-02-20')"
+    )
+    con.close()
+
+    r = CliRunner().invoke(
+        main,
+        [
+            "ask",
+            "-d",
+            "duckdb",
+            "--sql",
+            "SELECT DATE_TRUNC('month', created_at) AS m, SUM(amount) AS total FROM events GROUP BY m ORDER BY m",
+            "--execute-on",
+            "duckdb",
+            "--db-path",
+            str(db),
+            "--json",
+        ],
+    )
+    assert r.exit_code == 0
+    import json
+    parsed = json.loads(r.output)
+    assert parsed["execution"]["executed"] is True
+    assert parsed["execution"]["backend"] == "duckdb"
+    assert parsed["execution"]["row_count"] == 2

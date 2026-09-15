@@ -5,70 +5,107 @@ Only the SQLite backend ships in the base install for development / tests.
 Production backends install via extras:
 
     pip install speaksql[postgres]   # psycopg
+    pip install speaksql[duckdb]     # duckdb (in-process, also great for tests)
     pip install speaksql[snowflake]  # snowflake-connector-python
-    pip install speaksql[hana]       # hdbcli
-    ...
+    pip install speaksql[bigquery]   # google-cloud-bigquery
+    pip install speaksql[backends]   # all four at once
+
+Each backend lives in its own module and is lazily imported — you only
+pay for the driver you actually instantiate.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from speaksql.introspect import Backend, SchemaList
+from speaksql.introspect import Backend
 
+from .sqlite_backend import SQLiteBackend
 
-class SQLiteBackend:
-    """Local SQLite backend — useful for dev, tests, and demos."""
-
-    name = "sqlite"
-
-    def __init__(self, path: str = ":memory:") -> None:
-        import sqlite3
-        self._conn = sqlite3.connect(path)
-        self._conn.row_factory = sqlite3.Row
-
-    def introspect(self) -> SchemaList:
-        from speaksql.introspect import ColumnInfo, TableInfo
-        cur = self._conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
-        )
-        tables = []
-        for (name,) in cur.fetchall():
-            cols = []
-            for cid, cname, ctype, cnotnull, _dflt, _pk in self._conn.execute(
-                f"PRAGMA table_info({name})"
-            ).fetchall():
-                cols.append(
-                    ColumnInfo(
-                        name=cname,
-                        data_type=ctype,
-                        nullable=not bool(cnotnull),
-                        is_primary_key=bool(cid >= 0 and _pk),
-                    )
-                )
-            tables.append(TableInfo(catalog=None, schema=None, name=name, columns=tuple(cols)))
-        return SchemaList(tables=tuple(tables))
-
-    def execute(self, sql: str) -> list[tuple]:
-        cur = self._conn.execute(sql)
-        try:
-            return [tuple(r) for r in cur.fetchall()]
-        finally:
-            cur.close()
-
-    def close(self) -> None:
-        self._conn.close()
-
-
-__all__ = ["Backend", "SQLiteBackend"]
+__all__ = ["Backend", "SQLiteBackend", "backend_for"]
 
 
 def backend_for(dialect: str, **kwargs: Any) -> Backend:
-    """Construct a backend for `dialect`. Imports driver lazily."""
-    d = dialect.lower()
+    """Construct a backend for `dialect`. Imports driver lazily.
+
+    Raises:
+        UnsupportedDialectError: dialect string not recognized.
+        BackendError: driver is not installed for a recognized dialect.
+    """
+    from speaksql.exceptions import BackendError, UnsupportedDialectError
+
+    d = dialect.lower().strip()
+
+    # SQLite ships in the base install.
     if d == "sqlite":
         return SQLiteBackend(**kwargs)
-    raise NotImplementedError(
-        f"No bundled backend for dialect '{dialect}'. "
-        "Install the matching driver extras (postgres, snowflake, hana, ...)."
-    )
+
+    # Lazily import each driver so missing extras surface a clean BackendError.
+    if d in ("postgres", "postgresql"):
+        try:
+            from .postgres_backend import PostgresBackend
+        except ImportError as e:
+            raise BackendError(
+                "postgres backend requires 'psycopg[binary]': "
+                "pip install speaksql[postgres]"
+            ) from e
+        # Fail fast if the driver itself is missing, not deep inside __init__.
+        try:
+            import psycopg  # noqa: F401
+        except ImportError as e:
+            raise BackendError(
+                "postgres backend requires 'psycopg[binary]': "
+                "pip install speaksql[postgres]"
+            ) from e
+        return PostgresBackend(**kwargs)
+
+    if d == "duckdb":
+        try:
+            from .duckdb_backend import DuckDBBackend
+        except ImportError as e:
+            raise BackendError(
+                "duckdb backend requires 'duckdb': pip install speaksql[duckdb]"
+            ) from e
+        try:
+            import duckdb  # noqa: F401
+        except ImportError as e:
+            raise BackendError(
+                "duckdb backend requires 'duckdb': pip install speaksql[duckdb]"
+            ) from e
+        return DuckDBBackend(**kwargs)
+
+    if d == "snowflake":
+        try:
+            from .snowflake_backend import SnowflakeBackend
+        except ImportError as e:
+            raise BackendError(
+                "snowflake backend requires 'snowflake-connector-python': "
+                "pip install speaksql[snowflake]"
+            ) from e
+        try:
+            import snowflake.connector  # noqa: F401
+        except ImportError as e:
+            raise BackendError(
+                "snowflake backend requires 'snowflake-connector-python': "
+                "pip install speaksql[snowflake]"
+            ) from e
+        return SnowflakeBackend(**kwargs)
+
+    if d == "bigquery":
+        try:
+            from .bigquery_backend import BigQueryBackend
+        except ImportError as e:
+            raise BackendError(
+                "bigquery backend requires 'google-cloud-bigquery': "
+                "pip install speaksql[bigquery]"
+            ) from e
+        try:
+            from google.cloud import bigquery  # noqa: F401
+        except ImportError as e:
+            raise BackendError(
+                "bigquery backend requires 'google-cloud-bigquery': "
+                "pip install speaksql[bigquery]"
+            ) from e
+        return BigQueryBackend(**kwargs)
+
+    raise UnsupportedDialectError(dialect)
