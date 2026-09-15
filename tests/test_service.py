@@ -85,7 +85,13 @@ def test_service_execute_duckdb(tmp_path):
 
 
 def test_service_execute_missing_driver_400():
-    """Requesting a backend whose driver isn't installed surfaces a clean reason."""
+    """If the driver can't construct (missing creds or missing driver), surface a reason.
+
+    We can't easily simulate "driver missing" without monkeypatching, so
+    instead we exercise the snowflake path (which fails on config manager
+    without credentials) and verify the service returns executed=False
+    with a non-empty reason rather than 500-ing.
+    """
     from fastapi.testclient import TestClient
     from speaksql.service import app
 
@@ -95,13 +101,12 @@ def test_service_execute_missing_driver_400():
         json={
             "question": "SELECT 1",
             "is_sql": True,
-            "backend": "snowflake",  # very unlikely to be installed in CI
+            "backend": "snowflake",
         },
     )
     assert r.status_code == 200
     body = r.json()
-    # If snowflake driver IS installed we can't test the not-installed path.
-    if body["executed"]:
-        return
-    # Otherwise either reason (driver missing) or error (other failure) is set
-    assert (body.get("reason") or body.get("error")) is not None
+    # Either: snowflake driver isn't installed → BackendError-style reason
+    # Or: snowflake driver IS installed → construct fails on empty creds → reason
+    assert body["executed"] is False
+    assert body.get("reason") is not None

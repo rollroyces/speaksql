@@ -68,14 +68,24 @@ def test_unknown_dialect_raises_unsupported():
         backend_for("oracle")
 
 
-def test_missing_driver_raises_backend_error():
-    """If the driver isn't installed, BackendError surfaces a clean hint."""
+def test_missing_driver_raises_backend_error(monkeypatch):
+    """If the driver isn't installed, BackendError surfaces a clean hint.
+
+    Simulates a missing `snowflake-connector-python` install by intercepting
+    the import — independent of whether the driver actually exists in CI.
+    """
+    import builtins
+
     from speaksql.backends import backend_for
 
-    # Snowflake driver is heavy and rarely installed; assume it isn't.
-    try:
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "snowflake" or name.startswith("snowflake."):
+            raise ImportError("simulated: snowflake-connector-python not installed")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    with pytest.raises(BackendError) as exc:
         backend_for("snowflake")
-    except BackendError as e:
-        assert "snowflake-connector-python" in str(e)
-    except UnsupportedDialectError:
-        pytest.skip("snowflake is not a supported dialect")
+    assert "snowflake-connector-python" in str(exc.value).lower()

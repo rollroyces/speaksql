@@ -120,6 +120,16 @@ def execute(req: ExecuteRequest) -> ExecuteResponse:
         return ExecuteResponse(
             canonical=canonical, backend=req.backend, executed=False, reason=str(e)
         )
+    except Exception as e:  # noqa: BLE001
+        # Driver may be installed but refuse to construct without credentials
+        # (e.g. snowflake-connector-python reads its config manager on
+        # instantiation). Surface that as a friendly reason, not a 500.
+        return ExecuteResponse(
+            canonical=canonical,
+            backend=req.backend,
+            executed=False,
+            reason=f"backend construction failed: {type(e).__name__}: {e}",
+        )
 
     try:
         rows = be.execute(sql_to_run)
