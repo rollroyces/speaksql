@@ -63,9 +63,9 @@ copy-paste and no dialect-specific debugging.*
   type aliases, structural). Not just textual.
 - 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
   + FK metadata.
-- ✅ **159 tests passing** — unit + integration, including live SQLite
-  and DuckDB roundtrips, fake-server SSE streaming, and WebSocket
-  end-to-end frames.
+- ✅ **168 tests passing** — unit + integration, including live SQLite
+  and DuckDB roundtrips, fake-server SSE streaming, WebSocket
+  end-to-end frames, and 9 vendor-override regression tests.
 - 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
   lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
 - 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
@@ -465,6 +465,46 @@ PYTHONPATH=src python examples/llm_eval/run.py
 Pass `--provider openai` (with `SPEAKSQL_LLM_BASE_URL` set) to evaluate
 against a real LLM.
 
+### Vendor function overrides
+
+SQLGlot is correct ~95% of the time. The other 5% — cross-dialect
+date functions, vendor-specific NULL handling, HANA's quirky argument
+order — is where `vendor_overrides` comes in. After SQLGlot emits
+SQL, we walk a registry of per-dialect override functions that fix
+specific broken patterns.
+
+Example: `DATEDIFF('second', start_at, end_at)` on DuckDB. SQLGlot
+emits this as
+
+```sql
+DATE_DIFF('END_AT', start_at, CAST('second' AS DATE))
+```
+
+The args are swapped (`END_AT` is now first because SQLGlot treats it
+as a bare identifier, the unit ended up in a `CAST(...)`), and the
+result is a runtime error. The `vendor_overrides._duckdb_datediff`
+override recognizes the pattern and rewrites it to the canonical
+
+```sql
+DATE_DIFF('second', start_at, end_at)
+```
+
+which DuckDB executes correctly.
+
+**Adding your own override:** register a function with the registry:
+
+```python
+from speaksql.vendor_overrides import register
+
+@register("bigquery")
+def my_bigquery_fix(sql: str) -> str:
+    # Replace vendor-specific syntax that SQLGlot gets wrong
+    return sql.replace("OLD", "NEW")
+```
+
+Overrides are pure functions `(sql: str) -> str`, idempotent, and
+applied in registration order.
+
 ### JOIN graph
 
 Given a schema (from `Backend.introspect()`), SpeakSQL builds a JOIN
@@ -767,7 +807,7 @@ Three orthogonal tools complement the transpile pipeline:
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 159 tests
+uv run pytest            # 168 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -785,6 +825,7 @@ speaksql/
 │   ├── schema_aware.py        # FK-aware planner (plan_for_question, joins_to_sql)
 │   ├── diff.py                # semantic_diff + DiffEntry
 │   ├── graph.py               # JOIN graph builder + HTML renderer
+│   ├── vendor_overrides.py    # per-dialect textual fixes for SQLGlot bugs
 │   ├── cli.py                 # `speaksql` command (ask, diff, graph, dialects)
 │   ├── service.py             # FastAPI app (optional)
 │   ├── exceptions.py
@@ -792,7 +833,7 @@ speaksql/
 │   │                          #   Postgres, MySQL, MSSQL, Snowflake,
 │   │                          #   BigQuery, Spark/Databricks)
 │   └── dialects/              # vendor dialects (hana.py)
-├── tests/                     # 159 tests across 26 files
+├── tests/                     # 168 tests across 27 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   └── llm_eval/              # eval harness + eval_set.jsonl
@@ -834,11 +875,14 @@ All roadmap items from the original v0.1 launch are shipped:
 - [x] ~~FK-aware SQL generation (use graph knowledge to choose joins)~~
       — shipped via `speaksql.schema_aware.plan_for_question()`;
       auto-enabled in CLI when `--db-path` is given
+- [x] ~~Custom Snowflake / BigQuery / HANA vendor overrides~~ —
+      shipped via `vendor_overrides.py` registry; current override fixes
+      DuckDB DATEDIFF argument swapping (SQLGlot bug)
 
 New ideas being considered:
 
-- [ ] Custom Snowflake / BigQuery / HANA vendor overrides (functions,
-      types, syntactic idioms)
+- [ ] More vendor overrides (BigQuery SAFE_DIVIDE → IIF pattern,
+      Snowflake DATEADD arg-order quirks, HANA date arithmetic)
 - [ ] Multi-hop JOIN path planning (currently only direct edges)
 
 ---
@@ -862,5 +906,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 159 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 168 tests green</sub>
 </p>

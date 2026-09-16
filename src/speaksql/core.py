@@ -143,11 +143,14 @@ def transpile(
 def _apply_overrides(sql: str, dialect: str, ast: exp.Expression) -> str:
     """Targeted textual overrides applied to emitted SQL.
 
-    Kept narrow — only the things SQLGlot misses or gets wrong. Anything
-    more elaborate belongs in a post-rewrite step. Currently a no-op
-    placeholder; concrete overrides live in the dialect modules.
+    Delegates to `vendor_overrides.apply_overrides()`, which walks the
+    registered per-dialect override functions. Overrides should be
+    narrow, idempotent textual fixes for things SQLGlot's emitter gets
+    wrong (e.g. argument reordering for DATEDIFF).
     """
-    return sql
+    from speaksql.vendor_overrides import apply_overrides as _apply
+
+    return _apply(sql, dialect)
 
 
 def _post_format(sql: str, dialect: str) -> str:
