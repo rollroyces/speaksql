@@ -217,3 +217,59 @@ def test_spark_join_graph_falls_back_to_heuristic():
     g = build_join_graph(schema)
     pairs = {(e.source, e.target) for e in g.edges}
     assert ("orders", "users") in pairs  # heuristic picks up user_id → id
+
+
+# ---------------------------------------------------------------------------
+# Live Spark (JVM-backed) test — skipped if Java or pyspark unavailable
+# ---------------------------------------------------------------------------
+
+
+def _has_jvm() -> bool:
+    """Detect whether a JVM is available for pyspark to use."""
+    import shutil
+    import subprocess
+
+    java = shutil.which("java")
+    if not java:
+        return False
+    try:
+        proc = subprocess.run(
+            [java, "-version"],
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+        return proc.returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+
+
+@pytest.mark.skipif(
+    not _has_jvm(),
+    reason="Java not available; pyspark would fail at JVM startup",
+)
+def test_spark_live_local_session_runs_a_query():
+    """End-to-end smoke: pyspark local[*] session + executes a query.
+
+    This is the canonical CI sanity check — it proves the full
+    pipeline (driver load → JVM start → SQL execution) works against
+    real Spark. Skipped when Java is missing so local dev without a
+    JDK still has a green test suite.
+    """
+    import tempfile
+
+    from speaksql.backends.spark_backend import SparkBackend
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        backend = SparkBackend(master="local[1]", warehouse_dir=tmpdir)
+        try:
+            schema = backend.introspect()
+            # Empty schema initially
+            assert schema.tables == ()
+            # Execute a basic query against the local session
+            rows = backend.execute("SELECT 1 + 1 AS two")
+            assert rows == [(2,)]
+            # FK metadata is always empty for Spark (no FK concept)
+            assert backend.foreign_keys() == ()
+        finally:
+            backend.close()

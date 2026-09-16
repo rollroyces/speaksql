@@ -42,7 +42,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from collections.abc import Iterable, Sequence
+from collections.abc import AsyncIterator, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Protocol
 
@@ -355,6 +355,59 @@ def llm_to_canonical_streaming(
     return provider.stream(_build_messages(question, schema_hint=schema_hint))
 
 
+async def llm_to_canonical_streaming_async(
+    question: str,
+    provider: LLMProvider | None = None,
+    schema_hint: str | None = None,
+) -> AsyncIterator[str]:
+    """Async variant of `llm_to_canonical_streaming`.
+
+    Yields text chunks asynchronously. Each chunk is collected from the
+    underlying synchronous streaming provider on a thread executor so
+    blocking HTTP reads don't stall the event loop. The caller should
+    accumulate chunks (e.g. ``''.join(chunks)) if a complete string is
+    needed.
+
+    Raises ``LLMError`` if the provider stream fails; the exception
+    propagates out of the async iterator at iteration time.
+    """
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+
+    provider = provider or make_provider()
+    messages = _build_messages(question, schema_hint=schema_hint)
+
+    # Use a dedicated single-worker executor to keep chunks in order.
+    # In practice each chunk arrives on the order of milliseconds, so
+    # there's no benefit to running the executor across workers.
+    loop = asyncio.get_running_loop()
+    queue: asyncio.Queue[str | BaseException | None] = asyncio.Queue()
+
+    def _consume() -> None:
+        try:
+            for chunk in provider.stream(messages):
+                # Send to the event loop; put_nowait from a worker
+                # thread is safe because asyncio.Queue is thread-safe.
+                loop.call_soon_threadsafe(queue.put_nowait, chunk)
+        except (LLMError, OSError, ValueError, TypeError, RuntimeError) as exc:  # pragma: no cover - re-raised below
+            loop.call_soon_threadsafe(queue.put_nowait, exc)
+        finally:
+            loop.call_soon_threadsafe(queue.put_nowait, None)
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    try:
+        loop.run_in_executor(executor, _consume)
+        while True:
+            item = await queue.get()
+            if item is None:
+                break
+            if isinstance(item, BaseException):
+                raise item
+            yield item
+    finally:
+        executor.shutdown(wait=False)
+
+
 __all__ = [
     "FEW_SHOT_EXAMPLES",
     "SYSTEM_PROMPT",
@@ -365,5 +418,6 @@ __all__ = [
     "is_llm_enabled",
     "llm_to_canonical",
     "llm_to_canonical_streaming",
+    "llm_to_canonical_streaming_async",
     "make_provider",
 ]

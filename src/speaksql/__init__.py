@@ -24,6 +24,7 @@ try:
         is_llm_enabled,
         llm_to_canonical,
         llm_to_canonical_streaming,
+        llm_to_canonical_streaming_async,
         make_provider,
     )
 except ImportError:  # pragma: no cover
@@ -51,6 +52,7 @@ __all__ = [
     "is_llm_enabled",
     "llm_to_canonical",
     "llm_to_canonical_streaming",
+    "llm_to_canonical_streaming_async",
     "make_provider",
     "plan",
     "render_html",

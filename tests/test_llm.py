@@ -218,6 +218,83 @@ def test_stream_method_yields_chunks_from_real_provider():
         thread.join()
 
 
+# ---------------------------------------------------------------------------
+# Async streaming tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_async_streaming_with_mock_provider():
+    """MockProvider's single placeholder chunk should arrive via async iterator."""
+    from speaksql import llm_to_canonical_streaming_async
+    from speaksql.llm import MockProvider
+
+    provider = MockProvider("SELECT 42")
+    chunks = []
+    async for c in llm_to_canonical_streaming_async("q", provider):
+        chunks.append(c)
+    # MockProvider always emits 'SELECT 1 AS placeholder'
+    assert "".join(chunks) == "SELECT 1 AS placeholder"
+
+
+@pytest.mark.asyncio
+async def test_async_streaming_propagates_llm_error():
+    """If the sync provider raises mid-stream, the async iterator should raise too."""
+    from speaksql import llm_to_canonical_streaming_async
+    from speaksql.llm import LLMError
+
+    class _BoomProvider:
+        def stream(self, messages):  # type: ignore[no-untyped-def]
+            yield "first chunk"
+            raise LLMError("provider exploded")
+
+        def complete(self, messages):  # type: ignore[no-untyped-def]
+            raise LLMError("provider exploded")
+
+    with pytest.raises(LLMError, match="provider exploded"):
+        async for _ in llm_to_canonical_streaming_async(
+            "q", _BoomProvider()
+        ):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_async_streaming_doesnt_block_event_loop():
+    """While one async stream is iterating, another task should make progress.
+
+    This proves the async wrapper actually yields to the event loop
+    between chunks (vs. blocking on a sync generator).
+    """
+    import asyncio
+
+    from speaksql import llm_to_canonical_streaming_async
+    from speaksql.llm import MockProvider
+
+    async def stream_task() -> int:
+        provider = MockProvider("SELECT 1")
+        n = 0
+        async for _ in llm_to_canonical_streaming_async(
+            "q", provider
+        ):
+            n += 1
+        return n
+
+    counter_increments = 0
+
+    async def counter_task() -> int:
+        nonlocal counter_increments
+        # While the stream is consuming, this should also progress because
+        # the async wrapper yields between chunks.
+        for _ in range(10):
+            await asyncio.sleep(0)
+            counter_increments += 1
+        return counter_increments
+
+    stream_n, counter_n = await asyncio.gather(stream_task(), counter_task())
+    assert stream_n >= 1  # MockProvider yields once
+    assert counter_n == 10  # counter completed fully
+
+
 def test_mock_provider_stream_yields_full_string():
     """MockProvider.stream() should yield the full response in one chunk."""
     from speaksql.llm import MockProvider

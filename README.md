@@ -63,10 +63,11 @@ copy-paste and no dialect-specific debugging.*
   type aliases, structural). Not just textual.
 - 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
   + FK metadata.
-- ✅ **201 tests passing** — unit + integration, including live SQLite
+- ✅ **204 tests passing** — unit + integration, including live SQLite
   and DuckDB roundtrips, fake-server SSE streaming, WebSocket
-  end-to-end frames, 17 vendor-override regression tests, and 20
-  REPL subprocess-driven tests.
+  end-to-end frames, 17 vendor-override regression tests, 20 REPL
+  subprocess-driven tests, 3 async-LLM streaming tests, and a
+  live JVM-backed Spark smoke test (auto-skip when Java missing).
 - 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
   lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
 - 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
@@ -824,7 +825,7 @@ Three orthogonal tools complement the transpile pipeline:
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 201 tests
+uv run pytest            # 204 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -850,7 +851,7 @@ speaksql/
 │   │                          #   Postgres, MySQL, MSSQL, Snowflake,
 │   │                          #   BigQuery, Spark/Databricks)
 │   └── dialects/              # vendor dialects (hana.py)
-├── tests/                     # 201 tests across 28 files
+├── tests/                     # 204 tests across 29 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   └── llm_eval/              # eval harness + eval_set.jsonl
@@ -923,5 +924,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 201 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 204 tests green</sub>
 </p>

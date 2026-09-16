@@ -61,6 +61,7 @@ backends = [
 
 dev = [
   "pytest>=8.0",
+  "pytest-asyncio>=0.23",
   "pytest-cov>=5.0",
   "ruff>=0.5",
   "mypy>=1.10",
@@ -84,6 +85,7 @@ src = ["src/speaksql", "tests"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]
+asyncio_mode = "auto"
 markers = [
   "service: tests that require the optional [service] extra (fastapi, starlette, httpx).",
 ]

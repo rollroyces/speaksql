@@ -339,8 +339,6 @@ async def _resolve_canonical_ws(
         internally) and stream directly. Otherwise, run the rule layer
         and use its result.
     """
-    import asyncio
-
     if is_sql:
         return question
 
@@ -362,14 +360,16 @@ async def _resolve_canonical_ws(
         return rule_result
 
     try:
-        generator = _llm.llm_to_canonical_streaming(question)
         chunks: list[str] = []
-        for chunk in generator:
+        # Use the async streaming variant so blocking HTTP reads happen
+        # on a thread executor and don't stall the event loop. The
+        # previous approach was to iterate the sync generator with
+        # ``await asyncio.sleep(0.01)`` between chunks, which both
+        # adds latency and ties up the loop. The async variant lets
+        # the loop schedule other WebSocket connections in parallel.
+        async for chunk in _llm.llm_to_canonical_streaming_async(question):
             chunks.append(chunk)
             await ws.send_json({"type": "llm_token", "delta": chunk})
-            # Yield to the event loop so the client actually receives the
-            # frame before we keep iterating.
-            await asyncio.sleep(0.01)
     except (speaksql.llm.LLMError, OSError, ValueError, TypeError) as e:
         await ws.send_json({"type": "error", "message": f"LLM stream failed: {e}"})
         return None
