@@ -179,7 +179,80 @@ def plan_for_question(question: str, schema: SchemaList) -> SchemaHint:
         return SchemaHint(tables=(), unresolved=tuple(tokens))
 
     ranked = sorted(table_scores.items(), key=lambda kv: (-kv[1], kv[0]))
-    chosen = tuple(name for name, _ in ranked[:3])
+    chosen = list(ranked[:3])
+    chosen_names = [name for name, _ in chosen]
+
+    # Multi-hop: if the chosen tables are not directly FK-connected, do a
+    # BFS through the FK graph to find shortest paths between them. This
+    # pulls in intermediate tables that the user didn't name explicitly
+    # but are required to make the JOINs work.
+    # Example: question mentions "users" and "order_items" — no direct FK
+    # between them, but via "orders" they connect. The BFS finds that path
+    # and adds "orders" to the chosen set.
+    def _bfs_shortest_path(
+        src: str, dst: str, edges: list[tuple[str, str, str]]
+    ) -> list[str] | None:
+        """Unweighted BFS over the FK graph. Returns the list of
+        intermediate table names (excluding src and dst themselves),
+        or None if no path exists."""
+        if src == dst:
+            return []
+        # Adjacency: table_name -> [(neighbor_name, edge_label)]
+        adj: dict[str, list[tuple[str, str]]] = {}
+        for a, b, label in edges:
+            adj.setdefault(a, []).append((b, label))
+            adj.setdefault(b, []).append((a, label))
+        if src not in adj or dst not in adj:
+            return None
+        # BFS
+        from collections import deque
+
+        visited: dict[str, str | None] = {src: None}
+        queue = deque([src])
+        while queue:
+            node = queue.popleft()
+            if node == dst:
+                # Reconstruct path by following parent pointers.
+                # We start with the dst node itself, then walk backward.
+                path: list[str] = [node]
+                cur = node
+                while visited[cur] is not None:
+                    cur = visited[cur]  # type: ignore[assignment]
+                    path.append(cur)
+                path.reverse()
+                # path is now [src, ..., dst]; strip endpoints to get
+                # intermediate tables only.
+                return path[1:-1]
+            for neighbor, _ in adj.get(node, ()):
+                if neighbor not in visited:
+                    visited[neighbor] = node
+                    queue.append(neighbor)
+        return None
+
+    # Build the FK edge list (as tuple of (from, to, column-pair-label)).
+    fk_edges: list[tuple[str, str, str]] = []
+    for fk in schema.foreign_keys:
+        a = _table_only(fk.from_table)
+        b = _table_only(fk.to_table)
+        label = f"{a}.{fk.from_column} -> {b}.{fk.to_column}"
+        fk_edges.append((a, b, label))
+
+    # For every pair of chosen tables, find the shortest FK path
+    # and add any intermediate tables to the chosen set (with a small
+    # score so they rank below the user's explicit picks).
+    added_intermediates: set[str] = set()
+    for i in range(len(chosen_names)):
+        for j in range(i + 1, len(chosen_names)):
+            path = _bfs_shortest_path(chosen_names[i], chosen_names[j], fk_edges)
+            if path is None:
+                continue
+            for t in path:
+                if t not in added_intermediates and t not in chosen_names:
+                    added_intermediates.add(t)
+                    # Add at the END so user-explicit picks still rank first
+                    chosen_names.append(t)
+    # Rebuild chosen as a tuple
+    chosen = tuple(chosen_names)
 
     # Find FK edges connecting two chosen tables.
     # FK tables can be fully qualified ("schema.table") — normalize to just the table name for the membership check.

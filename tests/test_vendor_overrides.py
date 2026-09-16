@@ -124,3 +124,98 @@ def test_register_is_idempotent_across_imports():
     initial_count = len(_REGISTRY.get("duckdb", ()))
     apply_overrides("SELECT 1", "duckdb")
     assert len(_REGISTRY.get("duckdb", ())) == initial_count
+
+
+# ---------------------------------------------------------------------------
+# New override tests (added in the second vendor-override round)
+# ---------------------------------------------------------------------------
+
+
+def test_duckdb_date_diff_swap_args():
+    """BigQuery `DATE_DIFF(end, start, unit)` → DuckDB `DATE_DIFF(unit, start, end)`.
+
+    The override also lowercases the unit literal so output is consistent
+    regardless of how SQLGlot initially emitted it.
+    """
+    out = transpile(
+        "SELECT DATE_DIFF(end_at, start_at, DAY) FROM events",
+        targets=("duckdb",),
+    )
+    emitted = out["duckdb"]
+    # Args restored to (unit, start, end) — what DuckDB expects
+    assert "DATE_DIFF('day', start_at, end_at)" in emitted
+
+
+def test_duckdb_date_diff_other_units():
+    for unit in ("DAY", "HOUR", "MONTH", "WEEK"):
+        out = transpile(
+            f"SELECT DATE_DIFF(end_at, start_at, {unit}) FROM events",
+            targets=("duckdb",),
+        )
+        emitted = out["duckdb"]
+        assert f"DATE_DIFF('{unit.lower()}', start_at, end_at)" in emitted
+
+
+def test_postgres_seconds_between_to_epoch():
+    """`SECONDS_BETWEEN(t1, t2)` on Postgres has no function; rewrite
+    to the portable `EXTRACT(EPOCH FROM (t2 - t1))`."""
+    out = transpile(
+        "SELECT SECONDS_BETWEEN(t1, t2) AS d FROM events",
+        targets=("postgres",),
+    )
+    emitted = out["postgres"]
+    assert "EXTRACT(EPOCH FROM (t2 - t1))" in emitted
+    # Original function name should be gone
+    assert "SECONDS_BETWEEN" not in emitted
+
+
+def test_postgres_days_between_to_date_diff():
+    out = transpile(
+        "SELECT DAYS_BETWEEN(t1, t2) AS d FROM events",
+        targets=("postgres",),
+    )
+    emitted = out["postgres"]
+    # (t2)::date - (t1)::date is the idiomatic day-difference expression
+    assert "(t2)::date - (t1)::date" in emitted
+    assert "DAYS_BETWEEN" not in emitted
+
+
+def test_postgres_add_months_literal():
+    """`ADD_MONTHS(d, 3)` on Postgres becomes portable interval arithmetic."""
+    out = transpile(
+        "SELECT ADD_MONTHS(d, 3) FROM t",
+        targets=("postgres",),
+    )
+    emitted = out["postgres"]
+    assert "INTERVAL '1 month'" in emitted
+    assert "ADD_MONTHS" not in emitted
+
+
+def test_snowflake_add_months_literal():
+    out = transpile(
+        "SELECT ADD_MONTHS(d, 3) FROM t",
+        targets=("snowflake",),
+    )
+    emitted = out["snowflake"]
+    assert "INTERVAL '1 month'" in emitted
+
+
+def test_mysql_add_months_to_date_add():
+    out = transpile(
+        "SELECT ADD_MONTHS(d, 3) FROM t",
+        targets=("mysql",),
+    )
+    emitted = out["mysql"]
+    # MySQL's DATE_ADD takes (date, INTERVAL expr unit)
+    assert "DATE_ADD(d, INTERVAL 3 MONTH)" in emitted
+
+
+def test_overrides_dont_break_unrelated_sql():
+    """A SELECT without any of these vendor functions should pass through."""
+    sql = "SELECT id, name FROM users WHERE active = TRUE ORDER BY id LIMIT 10"
+    out = transpile(sql, targets=("duckdb", "postgres", "mysql", "snowflake"))
+    for emitted in out.values():
+        clean = " ".join(emitted.split())
+        assert "id" in clean
+        assert "name" in clean.lower()
+        assert "users" in clean

@@ -63,9 +63,10 @@ copy-paste and no dialect-specific debugging.*
   type aliases, structural). Not just textual.
 - 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
   + FK metadata.
-- ✅ **168 tests passing** — unit + integration, including live SQLite
+- ✅ **201 tests passing** — unit + integration, including live SQLite
   and DuckDB roundtrips, fake-server SSE streaming, WebSocket
-  end-to-end frames, and 9 vendor-override regression tests.
+  end-to-end frames, 17 vendor-override regression tests, and 20
+  REPL subprocess-driven tests.
 - 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
   lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
 - 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
@@ -177,7 +178,23 @@ speaksql dialects
 | `ask` | Transpile NL or canonical SQL to one or more dialects; optionally execute |
 | `diff` | Compare two SQL strings semantically (NULLS, ASC/DESC, function rewrites, etc.) |
 | `graph` | Build a JOIN graph from a SQLite/DuckDB file; emit JSON, text, or HTML |
+| `repl` | Interactive loop: type NL/SQL, get per-dialect output; switch dialects at runtime |
 | `dialects` | Print all supported dialect identifiers |
+
+```bash
+# Interactive REPL with schema awareness
+speaksql repl --dialect duckdb --dialect postgres --db-path sales.db
+
+> orders by user
+--- duckdb ---
+SELECT * FROM orders
+--- postgres ---
+SELECT * FROM orders
+> :dialects bigquery
+active dialects: bigquery
+> :quit
+bye!
+```
 
 ### HTTP service
 
@@ -807,7 +824,7 @@ Three orthogonal tools complement the transpile pipeline:
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 168 tests
+uv run pytest            # 201 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -833,7 +850,7 @@ speaksql/
 │   │                          #   Postgres, MySQL, MSSQL, Snowflake,
 │   │                          #   BigQuery, Spark/Databricks)
 │   └── dialects/              # vendor dialects (hana.py)
-├── tests/                     # 168 tests across 27 files
+├── tests/                     # 201 tests across 28 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   └── llm_eval/              # eval harness + eval_set.jsonl
@@ -906,5 +923,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 168 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 201 tests green</sub>
 </p>

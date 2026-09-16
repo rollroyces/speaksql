@@ -307,5 +307,130 @@ def diff(
     click.echo(format_diff(diffs))
 
 
+@main.command()
+@click.option(
+    "-d",
+    "--dialect",
+    multiple=True,
+    help="Dialect(s) to emit on every turn. Can be passed multiple times. "
+    "If omitted, all supported dialects are emitted.",
+)
+@click.option(
+    "--db-path",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    help="SQLite or DuckDB file to introspect for schema-aware REPL.",
+)
+def repl(dialect: tuple[str, ...], db_path: Path | None) -> None:
+    """Interactive SpeakSQL REPL.
+
+    Each line is treated as an NL question (or canonical SQL if it begins
+    with SELECT/WITH/INSERT/UPDATE/DELETE/MERGE). Output is the per-dialect
+    SQL for the active dialects. Type `:dialects` to switch, `:help` for
+    commands, `:quit` to exit.
+    """
+    from speaksql.backends import backend_for
+    from speaksql.exceptions import TranspileError
+    from speaksql.schema_aware import joins_to_sql, plan_for_question
+
+    _SQL_PREFIXES = ("SELECT", "WITH", "INSERT", "UPDATE", "DELETE", "MERGE")
+
+    active_dialects: list[str] = list(dialect) if dialect else list(SUPPORTED_DIALECTS)
+    schema = None
+    if db_path is not None:
+        try:
+            backend = backend_for("sqlite", path=str(db_path))
+            schema = backend.introspect()
+            click.echo(f"# introspected {len(schema.tables)} tables from {db_path}")
+        except (OSError, ValueError, TypeError, RuntimeError) as exc:
+            click.echo(f"# could not introspect {db_path}: {exc}", err=True)
+            schema = None
+
+    click.echo(
+        f"SpeakSQL REPL — dialects: {', '.join(active_dialects)}\n"
+        f"Type a question, ':help' for commands, ':quit' to exit."
+    )
+    try:
+        while True:
+            try:
+                line = input("> ")
+            except EOFError:
+                click.echo("")
+                break
+            line = line.strip()
+            if not line:
+                continue
+            if line.startswith(":"):
+                if _repl_command(line, active_dialects):
+                    break
+                continue
+            try:
+                is_sql = line.upper().startswith(_SQL_PREFIXES)
+                if schema is not None and not is_sql:
+                    # NL → canonical via FK-aware planner, then emit.
+                    hint = plan_for_question(line, schema)
+                    if hint.tables:
+                        joins = joins_to_sql(hint.joins)
+                        from_table = hint.tables[0]
+                        canonical = f"SELECT * FROM {from_table}"
+                        if joins:
+                            canonical += "\n" + joins
+                    else:
+                        # No table match — fall back to raw transpile.
+                        result = transpile(line, targets=tuple(active_dialects))
+                        for d in active_dialects:
+                            click.echo(f"--- {d} ---")
+                            click.echo(result[d].rstrip())
+                        continue
+                    result = transpile(
+                        canonical, targets=tuple(active_dialects)
+                    )
+                    for d in active_dialects:
+                        click.echo(f"--- {d} ---")
+                        click.echo(result[d].rstrip())
+                else:
+                    # Raw SQL (or no schema): transpile directly.
+                    result = transpile(line, targets=tuple(active_dialects))
+                    for d in active_dialects:
+                        click.echo(f"--- {d} ---")
+                        click.echo(result[d].rstrip())
+            except (
+                TranspileError,
+                ValueError,
+                TypeError,
+                RuntimeError,
+                OSError,
+            ) as exc:
+                click.echo(f"error: {exc}", err=True)
+    except KeyboardInterrupt:
+        click.echo("")
+    click.echo("bye!")
+
+
+def _repl_command(line: str, active_dialects: list[str]) -> bool:
+    """Handle `:cmd` lines in the REPL.
+
+    Returns True if the user asked to quit (so the caller can break the
+    loop cleanly).
+    """
+    parts = line[1:].split()
+    if not parts:
+        return False
+    cmd = parts[0]
+    if cmd in ("quit", "exit", "q"):
+        return True
+    if cmd in ("dialects", "d"):
+        if len(parts) > 1:
+            active_dialects.clear()
+            active_dialects.extend(parts[1:])
+            click.echo(f"active dialects: {', '.join(active_dialects)}")
+        else:
+            click.echo(f"current: {', '.join(active_dialects)}")
+    elif cmd in ("help", "h", "?"):
+        click.echo("commands: :help, :dialects [...], :quit")
+    else:
+        click.echo(f"unknown: {line!r}; try :help")
+    return False
+
+
 if __name__ == "__main__":  # pragma: no cover
     main()

@@ -151,3 +151,90 @@ def test_plan_handles_fk_column_token_singular_form():
     # hint at users too
     assert "orders" in hint.tables
     assert "users" in hint.tables
+
+
+# ---------------------------------------------------------------------------
+# Multi-hop JOIN path tests
+# ---------------------------------------------------------------------------
+
+
+def test_multi_hop_users_to_order_items_pulls_in_orders():
+    """Question names only users + order_items; BFS should pull in orders
+    via the FK chain users <- orders -> order_items."""
+    hint = plan_for_question("users with their order_items", _ecommerce_schema())
+    # All three tables should be in chosen
+    assert "users" in hint.tables
+    assert "order_items" in hint.tables
+    assert "orders" in hint.tables
+    # Both FK edges should be in joins
+    pairs = {(j.from_table, j.to_table) for j in hint.joins}
+    assert ("orders", "users") in pairs
+    assert ("order_items", "orders") in pairs
+
+
+def test_multi_hop_users_to_products_full_chain():
+    """users + products needs the full chain users -> orders -> order_items -> products."""
+    hint = plan_for_question("revenue per user via products", _ecommerce_schema())
+    # All four tables should be present
+    for t in ("users", "orders", "order_items", "products"):
+        assert t in hint.tables, f"missing {t} from {hint.tables}"
+    # Three joins: users<-orders, orders<-order_items, order_items<-products
+    pairs = {(j.from_table, j.to_table) for j in hint.joins}
+    assert ("orders", "users") in pairs
+    assert ("order_items", "orders") in pairs
+    assert ("order_items", "products") in pairs
+
+
+def test_multi_hop_no_path_returns_no_intermediate():
+    """If two chosen tables aren't FK-connected at all, no intermediate
+    tables are added and only direct joins are emitted."""
+    schema = SchemaList(
+        tables=(
+            TableInfo(None, None, "users", columns=(
+                ColumnInfo("id", "INTEGER", is_primary_key=True),
+            )),
+            TableInfo(None, None, "audit_log", columns=(
+                ColumnInfo("id", "INTEGER", is_primary_key=True),
+                ColumnInfo("msg", "TEXT"),
+                ColumnInfo("user_id", "INTEGER"),
+            )),
+        ),
+        foreign_keys=(
+            # Note: only audit_log has an FK TO users, but users has no FK
+            ForeignKeyInfo("audit_log", "user_id", "users", "id"),
+        ),
+    )
+    schema2 = SchemaList(
+        tables=schema.tables,
+        foreign_keys=(),
+    )
+    hint = plan_for_question("show users and audit_log", schema2)
+    # No FKs at all, so no joins
+    assert hint.joins == ()
+
+
+def test_multi_hop_preserves_user_order():
+    """User-mentioned tables should appear before interpolated ones in
+    the hint's tables tuple."""
+    hint = plan_for_question("users and order_items", _ecommerce_schema())
+    # users and order_items were user-mentioned; orders is interpolated.
+    # Both user ones should appear before orders in the tuple.
+    users_idx = hint.tables.index("users")
+    oi_idx = hint.tables.index("order_items")
+    # orders might or might not be in the tuple; if it is, it should be
+    # after the user ones.
+    if "orders" in hint.tables:
+        orders_idx = hint.tables.index("orders")
+        assert users_idx < orders_idx
+        assert oi_idx < orders_idx
+
+
+def test_multi_hop_idempotent():
+    """Repeated BFS runs on the same hint produce the same answer."""
+    q = "revenue per user via products"
+    h1 = plan_for_question(q, _ecommerce_schema())
+    h2 = plan_for_question(q, _ecommerce_schema())
+    assert h1.tables == h2.tables
+    assert {(j.from_table, j.to_table) for j in h1.joins} == {
+        (j.from_table, j.to_table) for j in h2.joins
+    }
