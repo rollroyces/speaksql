@@ -16,6 +16,7 @@ standalone HTML file (zero external deps, inlined SVG).
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from itertools import combinations
 
 from speaksql.introspect import ColumnInfo, SchemaList, TableInfo
 
@@ -260,6 +261,133 @@ def _build_from_heuristic(schema: SchemaList) -> JoinGraph:
     )
 
     return JoinGraph(nodes=nodes, edges=tuple(edges))
+
+
+@dataclass(frozen=True)
+class FKSuggestion:
+    """A heuristic FK candidate the user did NOT declare.
+
+    Returned by `suggest_fks()`. Users can review these and decide to
+    add them as real constraints, or accept them as soft hints for the
+    JOIN planner.
+    """
+
+    from_table: str
+    from_column: str
+    to_table: str
+    to_column: str
+    confidence: float  # 0.0–1.0
+    reason: str
+
+
+def suggest_fks(schema: SchemaList) -> tuple[FKSuggestion, ...]:
+    """Heuristically suggest FK candidates not already declared."""
+    tables = schema.tables
+
+    def _singular(name: str) -> str:
+        if name.endswith("ies"):
+            return name[:-3] + "y"
+        if name.endswith(("ses", "xes")):
+            return name[:-2]
+        if name.endswith("s") and len(name) > 1:
+            return name[:-1]
+        return name
+
+    declared: set[tuple[str, str, str, str]] = set()
+    for fk in schema.foreign_keys:
+        declared.add(
+            (
+                _table_only_for_suggest(fk.from_table),
+                fk.from_column,
+                _table_only_for_suggest(fk.to_table),
+                fk.to_column,
+            )
+        )
+
+    col_locations: dict[str, list[tuple[str, ColumnInfo]]] = {}
+    for t in tables:
+        for c in t.columns:
+            col_locations.setdefault(c.name, []).append((_table_key(t), c))
+
+    out: list[FKSuggestion] = []
+
+    # Heuristic 1: {singular(other)}_id -> other.PK
+    for t in tables:
+        tk = _table_key(t)
+        for c in t.columns:
+            cname = c.name
+            if not cname.endswith("_id"):
+                continue
+            target_table_singular = cname[:-3]
+            for other in tables:
+                if _table_key(other) == tk:
+                    continue
+                if _singular(other.name) != target_table_singular:
+                    continue
+                for other_col in other.columns:
+                    if other_col.is_primary_key:
+                        pair = (tk, cname, _table_key(other), other_col.name)
+                        if pair in declared:
+                            break
+                        out.append(
+                            FKSuggestion(
+                                from_table=tk,
+                                from_column=cname,
+                                to_table=_table_key(other),
+                                to_column=other_col.name,
+                                confidence=0.9,
+                                reason=(
+                                    f"{cname!r} matches "
+                                    f"'{target_table_singular}_id' pattern; "
+                                    f"{other.name}.{other_col.name} is PK"
+                                ),
+                            )
+                        )
+                        break
+
+    # Heuristic 2: shared column name (skip PK<->PK, type mismatch)
+    for col_name, locs in col_locations.items():
+        if len(locs) < 2:
+            continue
+        for (tk_a, ca), (tk_b, cb) in combinations(locs, 2):
+            if ca.is_primary_key and cb.is_primary_key:
+                continue
+            if ca.data_type != cb.data_type:
+                continue
+            pair_a = (tk_a, ca.name, tk_b, cb.name)
+            pair_b = (tk_b, cb.name, tk_a, ca.name)
+            if pair_a in declared or pair_b in declared:
+                continue
+            out.append(
+                FKSuggestion(
+                    from_table=tk_a,
+                    from_column=ca.name,
+                    to_table=tk_b,
+                    to_column=cb.name,
+                    confidence=0.5,
+                    reason=(
+                        f"shared column name {col_name!r} of type "
+                        f"{ca.data_type!r} appears in both tables"
+                    ),
+                )
+            )
+
+    seen: set[tuple[str, str, str, str]] = set()
+    deduped: list[FKSuggestion] = []
+    for s in out:
+        key = (s.from_table, s.from_column, s.to_table, s.to_column)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(s)
+    deduped.sort(key=lambda s: (-s.confidence, s.from_table, s.from_column))
+    return tuple(deduped)
+
+
+def _table_only_for_suggest(name: str) -> str:
+    """"Strip catalog.schema prefix and return just the table name."""
+    parts = name.split(".")
+    return parts[-1] if parts else name
 
 
 def render_html(graph: JoinGraph, *, title: str = "Schema JOIN Graph") -> str:

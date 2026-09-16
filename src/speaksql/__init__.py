@@ -10,7 +10,7 @@ from __future__ import annotations
 from speaksql.core import SUPPORTED_DIALECTS, Dialect, Plan, emit, plan, transpile
 from speaksql.diff import DiffEntry, format_diff, semantic_diff
 from speaksql.exceptions import SpeakSQLError, TranspileError, UnsupportedDialectError
-from speaksql.graph import JoinGraph, build_join_graph, render_html
+from speaksql.graph import FKSuggestion, JoinGraph, build_join_graph, render_html, suggest_fks
 from speaksql.introspect import introspect
 
 # Lazy-import LLM module so its (optional) usage of urllib doesn't bite
@@ -35,6 +35,7 @@ __all__ = [
     "SUPPORTED_DIALECTS",
     "Dialect",
     "DiffEntry",
+    "FKSuggestion",
     "JoinGraph",
     "LLMError",
     "LLMProvider",
@@ -57,5 +58,6 @@ __all__ = [
     "plan",
     "render_html",
     "semantic_diff",
+    "suggest_fks",
     "transpile",
 ]

@@ -266,6 +266,106 @@ def dialects() -> None:
         click.echo(d)
 
 
+@main.command(name="format")
+@click.argument(
+    "sql",
+    required=False,
+)
+@click.option(
+    "-d",
+    "--dialect",
+    "dialect",
+    type=click.Choice(sorted(SUPPORTED_DIALECTS)),
+    default=None,
+    help="Source dialect of the input (so SQLGlot can parse correctly). "
+    "Defaults to canonical ANSI.",
+)
+@click.option(
+    "--target",
+    "target",
+    type=click.Choice(sorted(SUPPORTED_DIALECTS)),
+    default=None,
+    help="Target dialect to emit. Defaults to the source dialect (or ANSI).",
+)
+@click.option(
+    "--compact/--pretty",
+    default=True,
+    help="Compact (single-line, default) or pretty (multi-line indented) output.",
+)
+@click.option(
+    "--from-file",
+    "from_file",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    default=None,
+    help="Read SQL from a file instead of the SQL argument.",
+)
+def format_cmd(
+    sql: str | None,
+    dialect: str | None,
+    target: str | None,
+    compact: bool,
+    from_file: Path | None,
+) -> None:
+    """Pretty-print SQL (canonicalize then re-render).
+
+    Use this to canonicalize ad-hoc SQL into a consistent shape, or to
+    convert SQL from one dialect to another without running an LLM. If
+    no SQL argument is given, the command reads from stdin so it works
+    in pipelines:
+
+    \b
+        echo "select 1,2" | speaksql format
+        cat query.sql | speaksql format --dialect postgres
+        speaksql format "select 1,2" --target snowflake
+    """
+    import sys
+
+    import sqlglot
+
+
+    if from_file is not None:
+        sql_text = from_file.read_text()
+    elif sql is not None:
+        sql_text = sql
+    else:
+        # Read from stdin if no argument and no file.
+        sql_text = sys.stdin.read()
+
+    sql_text = sql_text.strip()
+    if not sql_text:
+        raise click.BadParameter("empty SQL")
+
+    src = dialect or ""
+    dst = target or src
+    try:
+        # Use SQLGlot directly so we can pass the source dialect for
+        # correct parsing (transpile() assumes canonical input).
+        out = sqlglot.transpile(
+            sql_text,
+            read=src,
+            write=dst,
+            pretty=not compact,
+        )[0]
+    except (sqlglot.errors.ParseError, sqlglot.errors.TokenError) as exc:
+        raise click.ClickException(f"failed to parse SQL: {exc}") from exc
+    except Exception as exc:  # pragma: no cover — defensive
+        raise click.ClickException(f"failed to format SQL: {exc}") from exc
+
+    # Apply any vendor-specific overrides (DuckDB DATEDIFF etc.) so the
+    # output is also normalized.
+    from speaksql.vendor_overrides import apply_overrides
+
+    out = apply_overrides(out, dst)
+
+    # When compact, squeeze runs of whitespace to a single space (SQLGlot
+    # already returns single-line for pretty=False).
+    if compact:
+        formatted = " ".join(out.split())
+    else:
+        formatted = out
+    click.echo(formatted)
+
+
 @main.command()
 @click.argument("sql_a")
 @click.argument("sql_b")

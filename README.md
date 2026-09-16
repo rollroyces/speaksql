@@ -63,11 +63,11 @@ copy-paste and no dialect-specific debugging.*
   type aliases, structural). Not just textual.
 - 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
   + FK metadata.
-- ✅ **204 tests passing** — unit + integration, including live SQLite
+- ✅ **226 tests passing** — unit + integration, including live SQLite
   and DuckDB roundtrips, fake-server SSE streaming, WebSocket
   end-to-end frames, 17 vendor-override regression tests, 20 REPL
-  subprocess-driven tests, 3 async-LLM streaming tests, and a
-  live JVM-backed Spark smoke test (auto-skip when Java missing).
+  subprocess-driven tests, 10 CLI `format` tests, 3 async-LLM
+  streaming tests, and 8 `suggest_fks` heuristic-FK tests.
 - 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
   lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
 - 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
@@ -180,6 +180,7 @@ speaksql dialects
 | `diff` | Compare two SQL strings semantically (NULLS, ASC/DESC, function rewrites, etc.) |
 | `graph` | Build a JOIN graph from a SQLite/DuckDB file; emit JSON, text, or HTML |
 | `repl` | Interactive loop: type NL/SQL, get per-dialect output; switch dialects at runtime |
+| `format` | Pretty-print or canonicalize SQL; convert between dialects without an LLM |
 | `dialects` | Print all supported dialect identifiers |
 
 ```bash
@@ -270,7 +271,9 @@ for clients that want to show partial results as the LLM streams.
 | `/v1/ask` | WebSocket | Streaming variant — receives `llm_token` / `canonical` / `transpile` / `done` frames |
 | `/v1/execute` | POST | Transpile + execute on a live backend (sqlite/duckdb/postgres/mysql/mssql/snowflake/bigquery/spark) |
 | `/v1/diff` | POST | Compare two SQL strings semantically; returns `{identical, differences}` |
-| `/v1/graph` | POST | Build a JOIN graph from a SQLite/DuckDB file; returns JSON + HTML |
+| `/v1/graph` | POST | Build a JOIN graph from a SQLite/DuckDB file; returns JSON + HTML + `suggested_fks` |
+| `/v1/schema` | GET | Introspect a DB and return its schema as JSON (`?db=sqlite&db_path=...`) |
+| `/v1/health` | GET | Liveness probe (returns version + status) |
 | `/v1/dialects` | GET | List supported dialect identifiers |
 
 ### Live backends
@@ -825,7 +828,7 @@ Three orthogonal tools complement the transpile pipeline:
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 204 tests
+uv run pytest            # 226 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -851,7 +854,7 @@ speaksql/
 │   │                          #   Postgres, MySQL, MSSQL, Snowflake,
 │   │                          #   BigQuery, Spark/Databricks)
 │   └── dialects/              # vendor dialects (hana.py)
-├── tests/                     # 204 tests across 29 files
+├── tests/                     # 226 tests across 32 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   └── llm_eval/              # eval harness + eval_set.jsonl
@@ -924,5 +927,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 204 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 226 tests green</sub>
 </p>

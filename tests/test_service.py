@@ -189,3 +189,75 @@ def test_service_execute_missing_driver_400():
     # Or: snowflake driver IS installed → construct fails on empty creds → reason
     assert body["executed"] is False
     assert body.get("reason") is not None
+
+
+def test_service_health_endpoint():
+    """GET /v1/health returns 200 with version info."""
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.get("/v1/health")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["status"] == "ok"
+    assert body["service"] == "speaksql"
+    assert "version" in body
+
+
+def test_service_schema_endpoint_sqlite(tmp_path):
+    """GET /v1/schema returns the introspected schema for a SQLite file."""
+    import sqlite3
+
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    db_path = tmp_path / "test.db"
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.execute(
+            "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT NOT NULL)"
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+    client = TestClient(app)
+    r = client.get(
+        "/v1/schema", params={"db": "sqlite", "db_path": str(db_path)}
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["backend"] == "sqlite"
+    assert len(body["tables"]) == 1
+    t = body["tables"][0]
+    assert t["name"] == "users"
+    col_names = [c["name"] for c in t["columns"]]
+    assert "id" in col_names
+    assert "email" in col_names
+
+
+def test_service_schema_endpoint_missing_db_path():
+    """Without db_path for sqlite, return 400 with a hint."""
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.get("/v1/schema", params={"db": "sqlite"})
+    assert r.status_code == 400
+    body = r.json()
+    assert "db_path" in body.get("error", "") or "hint" in body
+
+
+def test_service_schema_endpoint_unsupported_backend():
+    """Unknown backend returns 503."""
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.get("/v1/schema", params={"db": "oracle"})
+    # Oracle is not in our registry → BackendError → 503
+    assert r.status_code == 503
+    body = r.json()
+    assert "error" in body
+    assert body.get("backend") == "oracle"

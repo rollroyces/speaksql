@@ -14,11 +14,17 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from fastapi import FastAPI, HTTPException, WebSocket
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 import speaksql.llm
-from speaksql import SUPPORTED_DIALECTS, semantic_diff, transpile
-from speaksql.exceptions import BackendError, SpeakSQLError, TranspileError
+from speaksql import SUPPORTED_DIALECTS, __version__, semantic_diff, transpile
+from speaksql.exceptions import (
+    BackendError,
+    SpeakSQLError,
+    TranspileError,
+    UnsupportedDialectError,
+)
 from speaksql.nl import nl_to_canonical
 
 # Backends that can be used as execute targets. Mirrors the CLI choice set.
@@ -86,6 +92,13 @@ class GraphResponse(BaseModel):
     nodes: int
     edges: int
     graph: dict[str, object]
+    suggested_fks: list[dict[str, object]] = Field(
+        default_factory=list,
+        description=(
+            "Heuristic FK candidates the user did not declare. Each item has "
+            "from_table/from_column/to_table/to_column/confidence/reason."
+        ),
+    )
     html: str
 
 
@@ -239,6 +252,23 @@ def graph(req: GraphRequest) -> GraphResponse:
     enriched = schema.with_foreign_keys(fks)
     g = build_join_graph(enriched)
     title = req.title or f"JOIN Graph — {req.db_path}"
+    # Heuristic FK suggestions the user didn't declare. Useful for users
+    # who don't have foreign-key constraints set up — they get a list of
+    # likely-FKs to consider adding.
+    from speaksql.graph import suggest_fks
+
+    suggestions = suggest_fks(enriched)
+    suggested_dicts = [
+        {
+            "from_table": s.from_table,
+            "from_column": s.from_column,
+            "to_table": s.to_table,
+            "to_column": s.to_column,
+            "confidence": s.confidence,
+            "reason": s.reason,
+        }
+        for s in suggestions
+    ]
     return GraphResponse(
         db_path=req.db_path,
         backend=req.backend,
@@ -246,12 +276,117 @@ def graph(req: GraphRequest) -> GraphResponse:
         edges=len(g.edges),
         graph=g.to_dict(),
         html=render_html(g, title=title),
+        suggested_fks=suggested_dicts,
     )
 
 
 @app.get("/v1/dialects")
 def dialects() -> dict[str, list[str]]:
     return {"supported": sorted(SUPPORTED_DIALECTS)}
+
+
+@app.get("/v1/health")
+def health() -> dict[str, str]:
+    """Liveness check.
+
+    Returns 200 OK with the service version. Use this for k8s/load-balancer
+    health probes — it doesn't do any work beyond the framework default
+    route resolution.
+    """
+    return {
+        "status": "ok",
+        "version": __version__,
+        "service": "speaksql",
+    }
+
+
+@app.get("/v1/schema", response_model=None)
+def get_schema(
+    db: str = "sqlite",
+    db_path: str | None = None,
+):
+    """Introspect a database and return the schema as JSON.
+
+    Query params:
+        db: backend key (sqlite | duckdb | postgres | mysql | mssql | snowflake
+            | bigquery | spark | hana). Default sqlite.
+        db_path: for sqlite/duckdb, the file path to open. For server-side
+            backends, leave db_path empty — the BACKEND connects via its
+            own env config. Returns 503 if the chosen backend can't be
+            reached.
+    """
+    from speaksql.backends import backend_for
+
+    try:
+        if db in ("sqlite", "duckdb"):
+            if not db_path:
+                return JSONResponse(
+                    status_code=400,
+                    content={
+                        "error": "missing db_path",
+                        "hint": f"for {db}, pass ?db_path=/path/to/file.db",
+                    },
+                )
+            backend = backend_for(db, path=db_path)
+        else:
+            backend = backend_for(db)
+    except UnsupportedDialectError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc), "backend": db},
+        )
+    except BackendError as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": str(exc), "backend": db},
+        )
+    except (ImportError, ModuleNotFoundError) as exc:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": f"backend '{db}' requires an optional driver: {exc}",
+                "backend": db,
+            },
+        )
+
+    try:
+        schema = backend.introspect()
+    except (OSError, RuntimeError, ValueError, TypeError) as exc:
+        return JSONResponse(
+            status_code=503,
+            content={"error": f"introspect failed: {exc}", "backend": db},
+        )
+
+    return {
+        "backend": db,
+        "tables": [_table_to_dict(t) for t in schema.tables],
+        "foreign_keys": [_fk_to_dict(fk) for fk in schema.foreign_keys],
+    }
+
+
+def _table_to_dict(t) -> dict:
+    return {
+        "schema": getattr(t, "schema", None),
+        "name": t.name,
+        "columns": [
+            {
+                "name": c.name,
+                "type": c.data_type,
+                "nullable": c.nullable,
+                "primary_key": c.is_primary_key,
+            }
+            for c in t.columns
+        ],
+    }
+
+
+def _fk_to_dict(fk) -> dict:
+    return {
+        "from_table": fk.from_table,
+        "from_column": fk.from_column,
+        "to_table": fk.to_table,
+        "to_column": fk.to_column,
+    }
 
 
 # ---------------------------------------------------------------------------
