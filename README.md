@@ -790,7 +790,7 @@ speaksql/
 │   ├── cli.py                 # `speaksql` command (ask, format, diff, graph, repl)
 │   ├── service.py             # FastAPI app (REST + WebSocket)
 │   ├── exceptions.py
-│   │   ├── backends/              # per-dialect DB drivers (8 backends, lazy import)
+│   ├── backends/              # per-dialect DB drivers (8 backends, lazy import)
 │   │   │                          #   sqlite, duckdb, postgres, mysql, mssql,
 │   │   │                          #   snowflake, bigquery, spark
 │   │   └── dialects/              # vendor dialects (hana.py)
