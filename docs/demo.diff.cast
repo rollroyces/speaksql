@@ -1,0 +1,12 @@
+{"version": 2, "width": 100, "height": 28, "timestamp": 1789657972, "env": {"TERM": "xterm-256color", "SHELL": "/bin/bash"}, "title": "SpeakSQL \u2014 diff"}
+[0.0, "o", "\u001b[H\u001b[2J"]
+[0.0, "o", "\u001b[?25l"]
+[0.0, "o", "\u001b[1;36mSpeakSQL \u2014 diff\u001b[0m  \u001b[2m# recorded demo\u001b[0m\n"]
+[0.531, "o", "\u001b[2m# Semantic diff (human-readable).\u001b[0m\n"]
+[0.531, "o", "\u001b[1;32m$\u001b[0m .venv/bin/speaksql diff 'SELECT id FROM t ORDER BY id ASC NULLS LAST' 'SELECT id FROM t ORDER BY id ASC' 2>&1\n"]
+[0.624, "o", "1 semantic difference(s):\n  1. [null_ordering] @ ORDER BY #0\n     a: 'NULLS LAST'\n     b: 'NULLS FIRST'  (null ordering differs)\n\n"]
+[0.636, "o", "$ "]
+[1.978, "o", "\u001b[2m# Semantic diff (JSON for tooling).\u001b[0m\n"]
+[1.978, "o", "\u001b[1;32m$\u001b[0m .venv/bin/speaksql diff --json 'SELECT id FROM t ORDER BY id ASC NULLS LAST' 'SELECT id FROM t ORDER BY id ASC' 2>&1\n"]
+[2.068, "o", "[\n  {\n    \"category\": \"null_ordering\",\n    \"location\": \"ORDER BY #0\",\n    \"a\": \"NULLS LAST\",\n    \"b\": \"NULLS FIRST\",\n    \"note\": \"null ordering differs\"\n  }\n]\n"]
+[2.086, "o", "$ "]

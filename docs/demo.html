@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>SpeakSQL — interactive demos</title>
+  <link rel="stylesheet" href="static/asciinema-player.css">
+  <style>
+    :root {
+      color-scheme: dark light;
+      --bg: #0b1020;
+      --fg: #e8eef7;
+      --muted: #8aa0c0;
+      --accent: #6ad4ff;
+      --border: #1c2540;
+    }
+    body {
+      margin: 0;
+      padding: 2rem 1rem 4rem;
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.5;
+    }
+    main {
+      max-width: 880px;
+      margin: 0 auto;
+    }
+    header h1 {
+      margin: 0 0 0.25rem;
+      font-size: 1.8rem;
+    }
+    header p {
+      margin: 0 0 2rem;
+      color: var(--muted);
+    }
+    h2 {
+      margin: 2.5rem 0 0.5rem;
+      font-size: 1.2rem;
+      color: var(--accent);
+    }
+    p {
+      margin: 0.5rem 0 0.75rem;
+    }
+    .player {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+    .meta {
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 1.5rem;
+    }
+    code {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 0.05em 0.35em;
+      border-radius: 4px;
+    }
+    footer {
+      margin-top: 3rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-align: center;
+    }
+    a {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>SpeakSQL — interactive demos</h1>
+      <p>Real captured terminal sessions, replayed in-browser. Press play
+        to watch; use <code>space</code> to pause, <code>f</code> for
+        fullscreen, and drag to seek.</p>
+    </header>
+
+    <section>
+      <h2>1. NL → 3 dialects in one shot</h2>
+      <p>A plain-English question, fanned out into Postgres, BigQuery, and
+        DuckDB in a single CLI call.</p>
+      <div class="player">
+        <asciinema-player src="demo.cast" autoplay loop speed="1.5"
+            poster="data:text/plain,SpeakSQL" cols="100" rows="28"></asciinema-player>
+      </div>
+      <p class="meta"><code>docs/demo.cast</code> · 128 frames · ~1.6s</p>
+    </section>
+
+    <section>
+      <h2>2. <code>speaksql format</code> — canonicalize &amp; cross-dialect</h2>
+      <p>Three flavors: compact (single-line), pretty (multi-line), and
+        DuckDB → Snowflake conversion.</p>
+      <div class="player">
+        <asciinema-player src="demo.format.cast" autoplay loop speed="1.5"
+            cols="100" rows="28"></asciinema-player>
+      </div>
+      <p class="meta"><code>docs/demo.format.cast</code> · 220 frames · ~3.0s</p>
+    </section>
+
+    <section>
+      <h2>3. <code>speaksql repl</code> — interactive REPL</h2>
+      <p>Type NL or canonical SQL; switch active dialects mid-session
+        with <code>:dialects</code>.</p>
+      <div class="player">
+        <asciinema-player src="demo.repl.cast" autoplay loop speed="1.5"
+            cols="100" rows="28"></asciinema-player>
+      </div>
+      <p class="meta"><code>docs/demo.repl.cast</code> · 147 frames</p>
+    </section>
+
+    <section>
+      <h2>4. <code>speaksql diff</code> — semantic SQL diff</h2>
+      <p>Same canonical query, two dialect emissions, and a structured
+        list of every difference.</p>
+      <div class="player">
+        <asciinema-player src="demo.diff.cast" autoplay loop speed="1.5"
+            cols="100" rows="28"></asciinema-player>
+      </div>
+      <p class="meta"><code>docs/demo.diff.cast</code> · 158 frames · ~1.5s</p>
+    </section>
+
+    <footer>
+      <p>Record your own with
+        <code>uv run python scripts/record_demo.py &lt;out.cast&gt; &lt;name&gt;</code>.
+        Five demo scripts live there: <code>demo</code>, <code>format</code>,
+        <code>repl</code>, <code>diff</code>, <code>graph</code>.</p>
+      <p><a href="https://github.com/rollroyces/speaksql">github.com/rollroyces/speaksql</a></p>
+    </footer>
+  </main>
+  <script src="static/asciinema-player.min.js"></script>
+</body>
+</html>

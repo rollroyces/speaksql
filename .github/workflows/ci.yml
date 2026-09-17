@@ -33,3 +33,39 @@ jobs:
         run: uv run --python ${{ matrix.python-version }} pytest -q
       - name: Ruff lint
         run: uv run --python ${{ matrix.python-version }} ruff check src tests
+
+  demo-recordings:
+    name: demo recordings (refresh + verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: "latest"
+      - name: Set up Python 3.12
+        run: uv python install 3.12
+      - name: Install (dev only — no backend drivers needed)
+        run: uv sync --python 3.12 --extra dev
+      - name: Re-record the demos
+        run: |
+          mkdir -p docs
+          for name in demo format repl diff; do
+            out="docs/demo${name:+.$name}.cast"
+            [ "$name" = "demo" ] && out="docs/demo.cast"
+            uv run --python 3.12 python scripts/record_demo.py "$out" "$name"
+          done
+      - name: Verify the recordings + HTML page
+        run: uv run --python 3.12 pytest tests/test_record_demo.py -q
+      - name: Upload recordings as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: speaksql-demo-recordings
+          path: |
+            docs/demo.cast
+            docs/demo.format.cast
+            docs/demo.diff.cast
+            docs/demo.repl.cast
+            docs/demo.html
+            docs/demo.svg
+            docs/static/

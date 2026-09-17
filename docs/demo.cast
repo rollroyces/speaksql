@@ -1,0 +1,12 @@
+{"version": 2, "width": 100, "height": 28, "timestamp": 1789657964, "env": {"TERM": "xterm-256color", "SHELL": "/bin/bash"}, "title": "SpeakSQL \u2014 demo"}
+[0.0, "o", "\u001b[H\u001b[2J"]
+[0.0, "o", "\u001b[?25l"]
+[0.0, "o", "\u001b[1;36mSpeakSQL \u2014 demo\u001b[0m  \u001b[2m# recorded demo\u001b[0m\n"]
+[0.527, "o", "\u001b[2m# Plain English \u2192 3 dialects in one shot.\u001b[0m\n"]
+[0.527, "o", "\u001b[1;32m$\u001b[0m echo 'monthly amount by country' | .venv/bin/speaksql ask -d postgres -d bigquery -d duckdb 2>&1 | head -40\n"]
+[0.653, "o", "-- postgres ------------------------------------------------\nSELECT\n  DATE_TRUNC('MONTH', created_at) AS month,\n  SUM(amount) AS total\nFROM events\nGROUP BY\n  month\nORDER BY\n  month NULLS FIRST\n\n-- bigquery ------------------------------------------------\nSELECT\n  DATE_TRUNC(created_at, MONTH) AS month,\n  SUM(amount) AS total\nFROM events\nGROUP BY\n  month\nORDER BY\n  month\n\n-- duckdb --------------------------------------------------\nSELECT\n  DATE_TRUNC('MONTH', created_at) AS month,\n  SUM(amount) AS total\nFROM events\nGROUP BY\n  month\nORDER BY\n  month NULLS FIRST\n\n"]
+[0.669, "o", "$ "]
+[2.003, "o", "\u001b[2m# Canonicalize SQL via the format subcommand.\u001b[0m\n"]
+[2.003, "o", "\u001b[1;32m$\u001b[0m .venv/bin/speaksql format --target postgres 'select    a,b,  c FROM tbl WHERE x=1' 2>&1\n"]
+[2.12, "o", "SELECT a, b, c FROM tbl WHERE x = 1\n"]
+[2.135, "o", "$ "]

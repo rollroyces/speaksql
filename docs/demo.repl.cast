@@ -1,0 +1,9 @@
+{"version": 2, "width": 100, "height": 28, "timestamp": 1789657974, "env": {"TERM": "xterm-256color", "SHELL": "/bin/bash"}, "title": "SpeakSQL \u2014 repl"}
+[0.0, "o", "\u001b[H\u001b[2J"]
+[0.0, "o", "\u001b[?25l"]
+[0.0, "o", "\u001b[1;36mSpeakSQL \u2014 repl\u001b[0m  \u001b[2m# recorded demo\u001b[0m\n"]
+[0.527, "o", "\u001b[2m# Live REPL with runtime dialect switching.\u001b[0m\n"]
+[0.528, "o", "\u001b[1;32m$\u001b[0m printf 'SELECT DATE_TRUNC('\\''month'\\'', created_at) AS m, country, SUM(amount) FROM events GROUP BY m\\n:dialects duckdb\\n:quit\\n' | .venv/bin/speaksql repl --dialect postgres --dialect bigquery 2>&1 | head -25\n"]
+[0.62, "o", "SpeakSQL REPL \u2014 dialects: postgres, bigquery\nType a question, ':help' for commands, ':quit' to exit.\n"]
+[0.627, "o", "> --- postgres ---\nSELECT\n  DATE_TRUNC('MONTH', created_at) AS m,\n  country,\n  SUM(amount)\nFROM events\nGROUP BY\n  m\n--- bigquery ---\nSELECT\n  DATE_TRUNC(created_at, MONTH) AS m,\n  country,\n  SUM(amount)\nFROM events\nGROUP BY\n  m\n> active dialects: duckdb\n> bye!\n"]
+[0.647, "o", "$ "]

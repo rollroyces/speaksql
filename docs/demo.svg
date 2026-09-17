@@ -1,0 +1,48 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 668" width="920" height="668" role="img" aria-label="SpeakSQL CLI demo: monthly amount by country transpiled to Postgres, BigQuery, and DuckDB">
+  <title>SpeakSQL CLI demo — NL → 3 dialects in one shot</title>
+  <desc>Captured terminal session showing the speaksql ask command emitting per-dialect SQL for Postgres, BigQuery, and DuckDB from a single natural-language question.</desc>
+
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#15181f"/>
+      <stop offset="1" stop-color="#0a0c10"/>
+    </linearGradient>
+    <linearGradient id="titlebar" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#2a2d34"/>
+      <stop offset="1" stop-color="#1c1f26"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Window shadow -->
+  <rect x="4" y="4" width="912" height="660" rx="10" fill="#000" opacity="0.45"/>
+
+  <!-- Window background -->
+  <rect x="0" y="0" width="920" height="668" rx="10" fill="url(#bg)"/>
+
+  <!-- Title bar -->
+  <rect x="0" y="0" width="920" height="28" rx="10" fill="url(#titlebar)"/>
+  <rect x="0" y="27" width="920" height="1" fill="#000" opacity="0.4"/>
+  <!-- Traffic lights -->
+  <circle cx="18" cy="14" r="6" fill="#ff5f56"/>
+  <circle cx="38" cy="14" r="6" fill="#ffbd2e"/>
+  <circle cx="58" cy="14" r="6" fill="#27c93f"/>
+  <!-- Title -->
+  <text x="460" y="18" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13" fill="#cfcfcf" text-anchor="middle">
+    speaksql — ask &#8226; postgres, bigquery, duckdb
+  </text>
+
+  <!-- Body -->
+  <g font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="14">
+    <text x="28" y="86" fill="#5fd75f">$</text>    <text x="36.4" y="86" fill="#e6e6e6"> echo 'monthly amount by country' | speaksql ask -d postgres -d bigquery -d duckdb</text>
+    <text x="28" y="130" fill="#d75f5f">-- postgres ------------------------------------------------</text>    <text x="28" y="152" fill="#d75faf">SELECT</text>    <text x="78.4" y="152" fill="#e6e6e6"></text>    <text x="28" y="174" fill="#e6e6e6">  DATE_TRUNC('MONTH', created_at) AS month,</text>
+    <text x="28" y="196" fill="#e6e6e6">  SUM(amount) AS total</text>
+    <text x="28" y="218" fill="#d75faf">FROM</text>    <text x="61.6" y="218" fill="#e6e6e6"> events</text>    <text x="28" y="240" fill="#d75faf">GROUP</text>    <text x="70.0" y="240" fill="#e6e6e6"> BY</text>    <text x="28" y="262" fill="#e6e6e6">  month</text>
+    <text x="28" y="284" fill="#d75faf">ORDER</text>    <text x="70.0" y="284" fill="#e6e6e6"> BY</text>    <text x="28" y="306" fill="#e6e6e6">  month NULLS FIRST</text>
+    <text x="28" y="350" fill="#d75f5f">-- bigquery ------------------------------------------------</text>    <text x="28" y="372" fill="#d75faf">SELECT</text>    <text x="78.4" y="372" fill="#e6e6e6"></text>    <text x="28" y="394" fill="#e6e6e6">  DATE_TRUNC(created_at, MONTH) AS month,</text>
+    <text x="28" y="416" fill="#e6e6e6">  SUM(amount) AS total</text>
+    <text x="28" y="438" fill="#d75faf">FROM</text>    <text x="61.6" y="438" fill="#e6e6e6"> events</text>    <text x="28" y="460" fill="#d75faf">GROUP</text>    <text x="70.0" y="460" fill="#e6e6e6"> BY</text>    <text x="28" y="482" fill="#e6e6e6">  month</text>
+    <text x="28" y="504" fill="#d75faf">ORDER</text>    <text x="70.0" y="504" fill="#e6e6e6"> BY</text>    <text x="28" y="526" fill="#e6e6e6">  month</text>
+    <text x="28" y="570" fill="#d75f5f">-- duckdb --------------------------------------------------</text>    <text x="28" y="592" fill="#d75faf">SELECT</text>    <text x="78.4" y="592" fill="#e6e6e6"></text>    <text x="28" y="614" fill="#e6e6e6">  DATE_TRUNC('MONTH', created_at) AS month,</text>
+    <text x="28" y="636" fill="#e6e6e6">  SUM(amount) AS total</text>
+  </g>
+</svg>
