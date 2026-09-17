@@ -45,8 +45,10 @@ jobs:
           version: "latest"
       - name: Set up Python 3.12
         run: uv python install 3.12
-      - name: Install (dev only — no backend drivers needed)
-        run: uv sync --python 3.12 --extra dev
+      - name: Install (dev + service extras — recorder needs the CLI,
+              test_record_demo.py loads demo.html which references
+              the service endpoints in fixtures)
+        run: uv sync --python 3.12 --extra dev --extra service
       - name: Re-record the demos
         run: |
           mkdir -p docs
