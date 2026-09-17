@@ -2,30 +2,28 @@
 
 > **Speak once. Query any dialect.**
 
-A dialect-aware SQL transpiler for Python. Build a canonical ANSI query plan
-once, emit correct syntax for **PostgreSQL, MySQL, SQL Server, Snowflake,
-BigQuery, Databricks, DuckDB, SQLite,** and **SAP HANA** — without writing
-per-dialect SQL by hand.
+A dialect-aware SQL transpiler for Python. Write one canonical ANSI query,
+get correct syntax for **PostgreSQL, MySQL, SQL Server, Snowflake,
+BigQuery, Databricks, DuckDB, SQLite,** and **SAP HANA** — plus a
+Fabric-style NL→SQL pipeline with example retrieval, per-source
+instructions, and a multi-step state-machine planner.
 
 [![CI](https://github.com/rollroyces/speaksql/actions/workflows/ci.yml/badge.svg)](https://github.com/rollroyces/speaksql/actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/rollroyces/speaksql)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 [![Built on SQLGlot](https://img.shields.io/badge/powered%20by-SQLGlot-orange)](https://github.com/tobymao/sqlglot)
+[![262 tests](https://img.shields.io/badge/tests-262%20passing-brightgreen)](https://github.com/rollroyces/speaksql)
 
 ---
 
-## Why SpeakSQL?
-
-Every data team ends up writing the same query five different ways — once
-per warehouse. **SpeakSQL** lets you write it once in canonical ANSI SQL
-and transpile it into idiomatic SQL for each target.
+## The 30-second pitch
 
 ```mermaid
 graph LR
     A["<b>Canonical ANSI</b><br/>DATE_TRUNC('month', ts)<br/>COUNT(*)<br/>LIMIT N"]:::canon
     P["<b>PostgreSQL</b><br/>DATE_TRUNC('MONTH', ts)"]:::pg
     B["<b>BigQuery</b><br/>DATE_TRUNC(ts, MONTH)"]:::bq
-    S["<b>Spark</b><br/>TRUNC(ts, 'MONTH')"]:::spark
+    S["<b>Spark / Databricks</b><br/>TRUNC(ts, 'MONTH')"]:::spark
     M["<b>MySQL</b><br/>STR_TO_DATE(<br/>  CONCAT(YEAR(ts), ' ',<br/>  MONTH(ts), ' 1'),<br/>  '%Y %c %e')"]:::mysql
     A --> P
     A --> B
@@ -39,41 +37,10 @@ graph LR
     classDef mysql fill:#f3e8ff,stroke:#581c87,color:#581c87
 ```
 
-*One canonical source → four dialect-specific outputs, with no
-copy-paste and no dialect-specific debugging.*
-
----
-
-## Features
-
-- 🌍 **9 supported dialects** — Postgres, MySQL, T-SQL, Snowflake, BigQuery,
-  Spark/Databricks, DuckDB, SQLite, SAP HANA.
-- 🧱 **Canonical plan + dialect emission** — built on [SQLGlot](https://github.com/tobymao/sqlglot)
-  for battle-tested parsing.
-- 🛠️ **Three surfaces** — Python library, CLI, and FastAPI service from one
-  install.
-- 🔌 **Live backends** — actually execute transpiled SQL against SQLite,
-  DuckDB, Postgres, MySQL, SQL Server, Snowflake, BigQuery, or Spark/
-  Databricks. Real FK constraints are read from the database and used
-  to build JOIN graphs.
-- 🧠 **LLM planner** — rule-based by default; opt-in via
-  `SPEAKSQL_USE_LLM=1` for any OpenAI-compatible endpoint (no SDK).
-- 🔍 **Semantic diff** — compare two SQL strings and see *why* they're
-  different (NULLS FIRST/LAST, ASC/DESC, TOP/LIMIT, function-call rewrites,
-  type aliases, structural). Not just textual.
-- 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
-  + FK metadata.
-- ✅ **262 tests passing** — unit + integration, including live SQLite
-  and DuckDB roundtrips, fake-server SSE streaming, WebSocket
-  end-to-end frames, 17 vendor-override regression tests, 20 REPL
-  subprocess-driven tests, 10 CLI `format` tests, 8 `suggest_fks`
-  tests, 14 multi-step planner state-machine tests, 15
-  example-library/embeddings tests, and 4 NL2SQL feature tests
-  (`--examples`/`--instructions`/inline/advanced).
-- 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
-  lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
-- 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
-  license available.
+One canonical source → four dialect-specific outputs, with no
+copy-paste and no dialect-specific debugging. Built on SQLGlot; adds
+the Fabric-style NL2SQL pipeline, FK-aware planning, JOIN graph
+visualization, and vendor-specific fixups.
 
 ---
 
@@ -83,14 +50,14 @@ copy-paste and no dialect-specific debugging.*
 pip install speaksql
 ```
 
-**With extras:**
+**With extras** (you'll want one of these for live databases):
 
 ```bash
 pip install speaksql[service]   # FastAPI + Uvicorn for the HTTP service
+pip install speaksql[duckdb]    # in-process DuckDB driver (great for tests)
 pip install speaksql[postgres]  # psycopg driver
 pip install speaksql[mysql]     # PyMySQL driver
 pip install speaksql[mssql]     # pymssql driver (SQL Server)
-pip install speaksql[duckdb]    # in-process DuckDB driver (great for tests)
 pip install speaksql[snowflake] # snowflake-connector-python
 pip install speaksql[bigquery]  # google-cloud-bigquery
 pip install speaksql[spark]     # PySpark (heavy; JVM required)
@@ -102,7 +69,7 @@ pip install speaksql[dev]       # pytest + ruff + mypy
 
 ## Quick start
 
-### Python library
+### As a library — transpile once, emit everywhere
 
 ```python
 import speaksql
@@ -115,21 +82,19 @@ canonical = (
     "ORDER BY month, total DESC"
 )
 
-# One query → many dialects
 result = speaksql.transpile(
     canonical,
     targets=("postgres", "bigquery", "snowflake", "tsql", "duckdb"),
 )
 for dialect, sql in result.items():
-    print(f"--- {dialect} ---")
-    print(sql)
+    print(f"--- {dialect} ---\n{sql}\n")
 ```
 
-**Sample output (BigQuery):**
+**Real output for `postgres`:**
 
 ```sql
 SELECT
-  DATE_TRUNC(created_at, MONTH) AS month,
+  DATE_TRUNC('MONTH', created_at) AS month,
   country,
   SUM(amount) AS total
 FROM events
@@ -141,376 +106,190 @@ ORDER BY
   total DESC
 ```
 
-### CLI
-
-The CLI takes **natural language by default**. No `--sql` flag needed for
-plain English:
+### As a CLI — NL by default
 
 ```bash
-# Natural language → all supported dialects
-speaksql ask "monthly amount by country"
-# → emits DATE_TRUNC GROUP BY for postgres, bigquery, snowflake, ...
+$ echo "monthly amount by country" | speaksql ask -d postgres -d bigquery -d duckdb
+-- postgres ------------------------------------------------
+SELECT
+  DATE_TRUNC('MONTH', created_at) AS month,
+  SUM(amount) AS total
+FROM events
+GROUP BY
+  month
+ORDER BY
+  month NULLS FIRST
 
-# Canonical SQL → specific targets only (skip NL layer)
-speaksql ask -d postgres -d snowflake --sql \
-  "SELECT id, amount FROM events WHERE amount > 100"
+-- bigquery ------------------------------------------------
+SELECT
+  DATE_TRUNC(created_at, MONTH) AS month,
+  SUM(amount) AS total
+FROM events
+GROUP BY
+  month
+ORDER BY
+  month
 
-# JSON output (for piping into other tools)
-speaksql ask "top 5 country by amount" --json
+-- duckdb --------------------------------------------------
+SELECT
+  DATE_TRUNC('MONTH', created_at) AS month,
+  SUM(amount) AS total
+FROM events
+GROUP BY
+  month
+ORDER BY
+  month NULLS FIRST
+```
 
-# Transpile AND execute on a live backend
-speaksql ask -d duckdb --sql \
-  "SELECT SUM(amount) AS total FROM events" \
-  --execute-on duckdb \
-  --db-path /tmp/events.duckdb \
-  --json
+The CLI takes **natural language by default** — no `--sql` flag needed
+for plain English. Canonical SQL is auto-detected when the input starts
+with a SQL keyword.
 
-# Compare two SQL strings semantically
-speaksql diff "SELECT id FROM t ORDER BY id ASC NULLS LAST" \
-            "SELECT id FROM t ORDER BY id ASC" --json
+```bash
+# Pretty-print / canonicalize SQL
+echo "select    a,b, c  FROM tbl WHERE x=1" | speaksql format --target postgres
+# → SELECT a, b, c FROM tbl WHERE x = 1
 
-# Build a JOIN graph from a SQLite database
-speaksql graph ./analytics.sqlite --backend sqlite --html ./graph.html
+# Pretty mode keeps the multi-line form
+speaksql format --pretty \
+  "SELECT id, name FROM users WHERE active = true ORDER BY id LIMIT 10"
 
-# List supported dialects
+# Compare two SQL strings semantically (NULLS, ASC/DESC, function rewrites)
+speaksql diff \
+  "SELECT id FROM t ORDER BY id ASC NULLS LAST" \
+  "SELECT id FROM t ORDER BY id ASC" --json
+
+# Interactive loop: type NL/SQL, get per-dialect output, switch at runtime
+speaksql repl --dialect duckdb --dialect postgres --db-path sales.db
+
+# Build a JOIN graph from a SQLite file
+speaksql graph ./analytics.sqlite --html ./graph.html
+
+# List supported dialect identifiers
 speaksql dialects
 ```
 
 | Subcommand | Purpose |
 |---|---|
-| `ask` | Transpile NL or canonical SQL to one or more dialects; optionally execute |
-| `diff` | Compare two SQL strings semantically (NULLS, ASC/DESC, function rewrites, etc.) |
-| `graph` | Build a JOIN graph from a SQLite/DuckDB file; emit JSON, text, or HTML |
-| `repl` | Interactive loop: type NL/SQL, get per-dialect output; switch dialects at runtime |
+| `ask` | Transpile NL or canonical SQL to one or more dialects; optionally execute on a live backend |
 | `format` | Pretty-print or canonicalize SQL; convert between dialects without an LLM |
+| `diff` | Compare two SQL strings semantically (NULLS, ASC/DESC, function rewrites, type aliases) |
+| `graph` | Build a JOIN graph from a SQLite/DuckDB file; emit JSON, text, or HTML |
+| `repl` | Interactive loop: NL/SQL input → per-dialect output, `:dialects` to switch, `:quit` to exit |
 | `dialects` | Print all supported dialect identifiers |
 
-```bash
-# Interactive REPL with schema awareness
-speaksql repl --dialect duckdb --dialect postgres --db-path sales.db
-
-> orders by user
---- duckdb ---
-SELECT * FROM orders
---- postgres ---
-SELECT * FROM orders
-> :dialects bigquery
-active dialects: bigquery
-> :quit
-bye!
-```
-
-### HTTP service
+### As a service — FastAPI
 
 ```bash
 pip install speaksql[service]
 uvicorn speaksql.service:app --reload
 ```
 
-The HTTP service takes **natural language** by default. No `is_sql` flag
-required for plain English:
-
-Transpile only — natural-language input:
-
 ```bash
+# NL input
 curl -X POST http://localhost:8000/v1/ask \
   -H 'content-type: application/json' \
-  -d '{
-        "question": "monthly amount by country",
-        "dialects": ["postgres", "snowflake", "bigquery"]
-      }'
-```
+  -d '{"question": "monthly amount by country",
+       "dialects": ["postgres", "snowflake", "bigquery"]}'
 
-Transpile only — canonical SQL input (skip NL layer):
-
-```bash
+# Canonical SQL input
 curl -X POST http://localhost:8000/v1/ask \
   -H 'content-type: application/json' \
-  -d '{
-        "question": "SELECT DATE_TRUNC('"'"'month'"'"', created_at) AS m, SUM(amount) AS total FROM events GROUP BY m",
-        "is_sql": true,
-        "dialects": ["postgres", "snowflake", "bigquery"]
-      }'
-```
+  -d '{"question": "SELECT 1 AS x",
+       "is_sql": true, "dialects": ["postgres", "duckdb"]}'
 
-Transpile **and execute** on a live backend (requires the matching driver extra):
-
-```bash
+# Transpile + execute on a live backend
 curl -X POST http://localhost:8000/v1/execute \
   -H 'content-type: application/json' \
-  -d '{
-        "question": "SELECT DATE_TRUNC('"'"'month'"'"', created_at) AS m, SUM(amount) AS total FROM events GROUP BY m ORDER BY m",
-        "is_sql": true,
-        "backend": "duckdb",
-        "db_path": "/tmp/events.duckdb"
-      }'
+  -d '{"question": "SELECT SUM(amount) AS total FROM events",
+       "is_sql": true, "backend": "duckdb", "db_path": "/tmp/events.duckdb"}'
+
+# Liveness + schema introspection
+curl http://localhost:8000/v1/health
+curl 'http://localhost:8000/v1/schema?db=sqlite&db_path=sales.db'
 ```
 
-Returns `row_count` + `rows` (capped at 100), with datetime/Decimal values
-ISO-formatted for clean JSON parsing.
-
 **Streaming via WebSocket** — connect to `ws://localhost:8000/v1/ask`,
-send the same JSON payload, and receive a sequence of frames as the
-canonical SQL is built and per-dialect transpilation completes:
+send the same JSON payload, and receive frames as the canonical SQL is
+built and per-dialect transpilation completes. The LLM stream is bridged
+onto the event loop via a thread executor + queue, so blocking HTTP reads
+don't stall other WebSocket connections.
 
 ```text
 client → server: {"question": "monthly active users"}
 server → client: {"type": "llm_token", "delta": "SELECT "}
 server → client: {"type": "llm_token", "delta": "DATE_TRUNC("}
-... (more llm_token frames if SPEAKSQL_USE_LLM=1 and the rule layer missed)
+... (more llm_token frames if SPEAKSQL_USE_LLM=1 and rule layer missed)
 server → client: {"type": "canonical",  "sql": "SELECT ..."}
 server → client: {"type": "transpile", "dialect": "postgres", "sql": "..."}
 server → client: {"type": "transpile", "dialect": "snowflake", "sql": "..."}
 server → client: {"type": "done"}
 ```
 
-The WebSocket path is end-to-end async and is the recommended surface
-for clients that want to show partial results as the LLM streams.
-
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/v1/ask` | POST | Transpile SQL or NL to one or more dialects |
-| `/v1/ask` | WebSocket | Streaming variant — receives `llm_token` / `canonical` / `transpile` / `done` frames |
-| `/v1/execute` | POST | Transpile + execute on a live backend (sqlite/duckdb/postgres/mysql/mssql/snowflake/bigquery/spark) |
-| `/v1/diff` | POST | Compare two SQL strings semantically; returns `{identical, differences}` |
-| `/v1/graph` | POST | Build a JOIN graph from a SQLite/DuckDB file; returns JSON + HTML + `suggested_fks` |
-| `/v1/schema` | GET | Introspect a DB and return its schema as JSON (`?db=sqlite&db_path=...`) |
-| `/v1/health` | GET | Liveness probe (returns version + status) |
+| `/v1/ask` | POST | Transpile NL or canonical SQL to one or more dialects |
+| `/v1/ask` | WebSocket | Streaming variant — `llm_token` / `canonical` / `transpile` / `done` frames |
+| `/v1/execute` | POST | Transpile + execute on a live backend (sqlite / duckdb / postgres / mysql / mssql / snowflake / bigquery / spark) |
+| `/v1/diff` | POST | Semantic diff between two SQL strings |
+| `/v1/graph` | POST | JOIN graph + `suggested_fks` for a SQLite/DuckDB file |
+| `/v1/schema` | GET | Introspect a DB and return its schema as JSON |
 | `/v1/dialects` | GET | List supported dialect identifiers |
+| `/v1/health` | GET | Liveness probe (version + status) |
 
-### Live backends
+---
 
-In addition to transpilation, SpeakSQL ships live-driver backends so you can
-verify the emitted SQL against a real engine:
+## The Fabric-style NL2SQL pipeline
 
-| Dialect | Install | Import |
-|---|---|---|
-| SQLite | (base install) | `from speaksql.backends import backend_for; backend_for("sqlite")` |
-| DuckDB | `pip install speaksql[duckdb]` | `backend_for("duckdb")` |
-| PostgreSQL | `pip install speaksql[postgres]` | `backend_for("postgres", host=..., dbname=..., user=..., password=...)` |
-| MySQL | `pip install speaksql[mysql]` | `backend_for("mysql", host=..., user=..., password=..., database=...)` |
-| SQL Server | `pip install speaksql[mssql]` | `backend_for("mssql", server=..., user=..., password=..., database=...)` |
-| Snowflake | `pip install speaksql[snowflake]` | `backend_for("snowflake", user=..., password=..., account=..., warehouse=...)` |
-| BigQuery | `pip install speaksql[bigquery]` | `backend_for("bigquery", project=...)` |
-| Spark / Databricks | `pip install speaksql[spark]` | `backend_for("spark", master="local[*]", app_name="...")` |
-| All seven | `pip install speaksql[backends]` | — |
+SpeakSQL ships the same three pieces Microsoft ships for the Fabric
+data agent — without the Azure lock-in, and applied to **multi-dialect**
+emission. They layer cleanly: pick as many or as few as you want.
 
-Every backend implements the same `Backend` protocol: `introspect()` returns a
-`SchemaList`, `execute(sql)` returns `list[tuple]`, `close()` shuts the
-connection. Roundtrip example:
+### 1. Rule layer (default, zero-config)
 
-```python
-import speaksql
-from speaksql.backends import backend_for
+The `speaksql.nl` module ships three regex patterns: `count of X`,
+`top N X by Y`, `monthly X by Y`. When a query matches, the LLM is
+bypassed entirely. When it doesn't, the rule layer returns a
+syntactically valid placeholder with the original question preserved
+as a comment. **No fabrication.**
 
-be = backend_for("duckdb")  # or "sqlite", "postgres", ...
-be.execute("CREATE TABLE events (id INT, amount DOUBLE)")
-be.execute("INSERT INTO events VALUES (1, 100.0), (2, 200.0)")
+### 2. Example-query library (Fabric "example queries" → RAG)
 
-canonical = "SELECT SUM(amount) AS total FROM events"
-results = speaksql.transpile(canonical, targets=("duckdb",))
-print(be.execute(results["duckdb"]))
-# [(300.0,)]
-
-schema = be.introspect()
-for t in schema.tables:
-    print(f"{t.schema}.{t.name}: {[c.name for c in t.columns]}")
-# main.events: ['id', 'amount']
-```
-
-### FK-aware SQL generation
-
-When you give SpeakSQL a real schema (via `Backend.introspect()` + `foreign_keys()`),
-the rule-based planner becomes **schema-aware**: it tokenizes the question,
-matches tokens against table and column names, uses the FK metadata to pull
-in parent tables, and emits canonical SQL with the right JOINs.
-
-```mermaid
-flowchart LR
-    Q[Question<br/>"monthly orders by user"]:::input
-    S[Schema<br/>+ FK metadata]:::input
-    P[plan_for_question]:::core
-    H[SchemaHint<br/>tables, columns, joins]:::hint
-    R[Rule patterns<br/>or LLM prompt]:::emit
-    SQL[Canonical SQL<br/>+ JOIN clause]:::out
-
-    Q --> P
-    S --> P
-    P --> H
-    H --> R
-    R --> SQL
-
-    classDef input fill:#fef3c7,stroke:#92400e
-    classDef core fill:#dbeafe,stroke:#1e3a8a
-    classDef hint fill:#dcfce7,stroke:#166534
-    classDef emit fill:#f3e8ff,stroke:#581c87
-    classDef out fill:#fce7f3,stroke:#9d174d
-```
-
-```python
-from speaksql.backends import backend_for
-from speaksql.schema_aware import plan_for_question, joins_to_sql
-
-be = backend_for("duckdb", path="./analytics.duckdb")
-schema = be.introspect().with_foreign_keys(be.foreign_keys())
-be.close()
-
-hint = plan_for_question("monthly orders by user", schema)
-print(hint.to_prompt_section())
-# Tables:
-#   orders ((no columns matched))
-#   users ((no columns matched))
-# Joins:
-#   orders.user_id → users.id
-
-print(joins_to_sql(hint.joins))
-# JOIN users ON orders.user_id = users.id
-```
-
-`nl_to_canonical()` accepts the schema too:
-
-```python
-from speaksql.nl import nl_to_canonical
-
-sql = nl_to_canonical("count of orders per user", schema=schema)
-# SELECT "user", COUNT(orders) AS cnt
-# FROM orders
-# JOIN users ON orders.user_id = users.id
-# GROUP BY "user"
-```
-
-The CLI auto-discovers FKs when you pass `--db-path`:
+Build a JSONL file of `(question, sql)` pairs that reflect your
+business vocabulary. At NL→SQL time the top-K matches by **BM25** (no
+external API) are injected as few-shot examples into the LLM system
+prompt.
 
 ```bash
-speaksql ask -d duckdb --db-path ./analytics.duckdb \
-  "count of orders per user"
-# → emits a SELECT with FROM orders JOIN users ON orders.user_id = users.id
+speaksql ask "monthly revenue by country" \
+  --examples examples/example_library.jsonl
 ```
 
-When the question is too ambiguous for the rule layer, the **same** schema
-hint is injected into the LLM system prompt so the LLM also benefits
-from the FK metadata.
-
-### LLM planner
-
-The default NL→SQL planner in `speaksql.nl` is rule-based — three regex
-patterns covering `count of X`, `top N X by Y`, and `monthly X by Y`. When
-a query doesn't match, it returns a syntactically valid placeholder SQL
-with the original question preserved as a comment. **No fabrication.**
-
-The CLI and HTTP service take **natural language directly** — no flag
-needed. If the rule layer matches, the LLM is bypassed entirely. If the
-rule layer misses and `SPEAKSQL_USE_LLM=1`, the LLM kicks in as a
-fallback.
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant NL as nl_to_canonical
-    participant Rules as Rule patterns
-    participant LLM as llm_to_canonical_streaming
-    participant Provider as OpenAI-compatible endpoint
-
-    User->>NL: "monthly active users"
-    alt Rule matches
-        NL->>Rules: match regex
-        Rules-->>NL: pattern + captured groups
-        NL-->>User: SELECT DATE_TRUNC(...)...
-    else No rule match
-        NL->>NL: Check SPEAKSQL_USE_LLM
-        alt LLM disabled
-            NL-->>User: "-- could not parse: ..."<br/>SELECT 1 AS placeholder
-        else LLM enabled
-            NL->>LLM: question
-            LLM->>Provider: POST /chat/completions<br/>(system prompt + few-shot,<br/>stream=true)
-            Provider-->>LLM: SSE chunks<br/>(data: {"delta":{...}})
-            LLM-->>NL: concatenated canonical SQL
-            NL-->>User: canonical SQL
-        end
-    end
+```jsonl
+{"question": "monthly revenue", "sql": "SELECT DATE_TRUNC('month', created_at) AS month, SUM(amount) AS revenue FROM events GROUP BY month ORDER BY month", "tags": ["date_trunc", "revenue"]}
+{"question": "top 5 revenue by country", "sql": "SELECT country, SUM(revenue) FROM events GROUP BY country ORDER BY SUM(revenue) DESC LIMIT 5", "tags": ["top_n"]}
 ```
 
-**Streaming.** Both providers implement `stream(messages)` which yields
-incremental text deltas via Server-Sent Events. SpeakSQL exposes this as
-`llm_to_canonical_streaming(question)` — useful for the WebSocket
-endpoint, which forwards each chunk as an `llm_token` frame.
-
-For more flexible NL handling, set `SPEAKSQL_USE_LLM=1` and configure
-a provider. SpeakSQL ships:
-
-- `MockProvider` — returns canned canonical SQL for testing. The default.
-- `OpenAICompatibleProvider` — POST to any OpenAI-shaped endpoint via
-  stdlib `urllib`. No SDK required. Works with OpenAI, Together, Groq,
-  OpenRouter, vLLM, Ollama, and local llama.cpp.
-
-Env vars:
-
-```bash
-export SPEAKSQL_USE_LLM=1
-export SPEAKSQL_LLM_BASE_URL=https://api.openai.com/v1
-export SPEAKSQL_LLM_API_KEY=sk-...              # or OPENAI_API_KEY
-export SPEAKSQL_LLM_MODEL=gpt-4o-mini
-export SPEAKSQL_LLM_AUTH_HEADER=Authorization  # or x-api-key for Anthropic-style
-export SPEAKSQL_LLM_AUTH_PREFIX='Bearer '
-export SPEAKSQL_LLM_TIMEOUT_S=30
-export SPEAKSQL_LLM_MAX_TOKENS=512
-export SPEAKSQL_LLM_TEMPERATURE=0.0
-```
-
-Programmatic:
+For higher recall on longer queries, swap BM25 for an embedding
+retriever via any OpenAI-compatible endpoint:
 
 ```python
-import speaksql
-from speaksql.llm import MockProvider, OpenAICompatibleProvider
+from speaksql.examples import EmbeddingRetriever
+from speaksql.llm import OpenAICompatibleProvider
 
-# Mock (default; no network)
-p = MockProvider()
-sql = speaksql.llm_to_canonical("show all users", provider=p)
-
-# Custom OpenAI-compatible endpoint
-p = OpenAICompatibleProvider(
-    base_url="https://api.together.xyz/v1",
-    model="meta-llama/Llama-3-70b-chat-hf",
-    api_key="...",
+retriever = EmbeddingRetriever(
+    OpenAICompatibleProvider(
+        base_url="https://api.openai.com/v1",
+        model="text-embedding-3-small",
+    )
 )
-sql = speaksql.llm_to_canonical("monthly active users", provider=p)
+hits = retriever.retrieve("active enterprise customers in Q4", library, top_k=3)
 ```
 
-An eval harness lives at `examples/llm_eval/run.py`. Run with the mock
-provider to verify your prompt changes don't regress rule-based
-behavior:
+### 3. Per-source instructions
 
-```bash
-PYTHONPATH=src python examples/llm_eval/run.py
-# 7/7 cases passed.
-```
-
-Pass `--provider openai` (with `SPEAKSQL_LLM_BASE_URL` set) to evaluate
-against a real LLM.
-
-### Example-query library (Fabric-style RAG)
-
-Build up a JSONL file of `(question, sql)` pairs that reflect your
-business vocabulary and conventions. At NL-to-SQL time the top-K
-matches are injected as few-shot examples into the LLM system prompt.
-
-```bash
-# Use the bundled library
-speaksql ask "monthly revenue by country" --examples examples/example_library.jsonl
-
-# Or your own
-speaksql ask "active enterprise customers in Q4" \
-  --examples ./our-team/fewshots.jsonl
-```
-
-The default retriever is BM25 (no external API). For higher recall
-on longer queries, plug in any OpenAI-compatible embeddings endpoint
-via `speaksql.examples.EmbeddingRetriever`.
-
-### Per-source instructions
-
-A plain-text file with rules that travel with the data source —
-"FABRIC-style data source instructions":
+A plain-text file with rules that travel with the data source — the
+Fabric "data source instructions" feature:
 
 ```bash
 speaksql ask "show me last quarter's bookings" \
@@ -522,14 +301,31 @@ The instructions file is appended to the LLM system prompt under a
 `## Instructions` header so the model sees them after the schema
 context block.
 
-### Multi-step planner (`advanced`)
+### 4. Multi-step planner (`advanced`)
 
-SpeakSQL's standard path is one LLM call. The `advanced` mode runs a
-state machine — `IdentifyTables` → `IdentifyColumns` → `GenerateSQL`
-→ `SyntacticValidate` → `BusinessValidate` — with self-correction on
-parse errors and column-reference errors, up to a configurable
-retry budget. Inspired by Microsoft Fabric's "Advanced NL2SQL" and
-the Semantic Kernel Process Framework.
+For higher accuracy, the `advanced` mode runs a state machine:
+**IdentifyTables → IdentifyColumns → GenerateSQL → SyntacticValidate
+→ BusinessValidate**, with self-correction on parse errors and
+column-reference errors up to a configurable retry budget. Inspired
+by Fabric's "Advanced NL2SQL" and the Semantic Kernel Process
+Framework.
+
+```mermaid
+flowchart LR
+    Q["Question"]:::input --> IT["IdentifyTables<br/>(FK-aware planner)"]:::stage
+    IT --> IC["IdentifyColumns<br/>(list cols from chosen tables)"]:::stage
+    IC --> G["GenerateSQL<br/>(LLM call with examples + instructions)"]:::stage
+    G --> SV["SyntacticValidate<br/>(SQLGlot parse_one)"]:::validate
+    SV --> BV["BusinessValidate<br/>(columns exist on chosen tables?)"]:::validate
+    SV -.parse error.-> G
+    BV -.unknown cols.-> G
+    BV --> OK["Done"]:::output
+
+    classDef input fill:#fef3c7,stroke:#92400e
+    classDef stage fill:#dbeafe,stroke:#1e3a8a
+    classDef validate fill:#fee2e2,stroke:#7f1d1d
+    classDef output fill:#dcfce7,stroke:#166534
+```
 
 ```bash
 speaksql ask "users who never placed an order" \
@@ -551,55 +347,117 @@ print(result.state.canonical_sql)
 print(result.state.stages_run)   # ['identify_tables', ..., 'business_validate']
 ```
 
-### Vendor function overrides
+### Streaming fallback to LLM
 
-SQLGlot is correct ~95% of the time. The other 5% — cross-dialect
-date functions, vendor-specific NULL handling, HANA's quirky argument
-order — is where `vendor_overrides` comes in. After SQLGlot emits
-SQL, we walk a registry of per-dialect override functions that fix
-specific broken patterns.
+When the rule layer misses and `SPEAKSQL_USE_LLM=1` is set, the LLM
+takes over. The streaming path is bridged onto the event loop so
+WebSocket clients see LLM tokens as they arrive.
 
-Example: `DATEDIFF('second', start_at, end_at)` on DuckDB. SQLGlot
-emits this as
+```mermaid
+sequenceDiagram
+    participant User
+    participant NL as nl_to_canonical
+    participant Rules as Rule patterns
+    participant LLM as llm_to_canonical_streaming_async
+    participant Provider as OpenAI-compatible endpoint
 
-```sql
-DATE_DIFF('END_AT', start_at, CAST('second' AS DATE))
+    User->>NL: "monthly active users"
+    alt Rule matches
+        NL->>Rules: match regex
+        Rules-->>NL: pattern + captured groups
+        NL-->>User: SELECT DATE_TRUNC(...)...
+    else No rule match
+        NL->>NL: Check SPEAKSQL_USE_LLM
+        alt LLM disabled
+            NL-->>User: "-- could not parse: ..."<br/>SELECT 1 AS placeholder
+        else LLM enabled
+            NL->>LLM: question + schema_hint + examples + instructions
+            LLM->>Provider: POST /chat/completions<br/>(stream=true)
+            Provider-->>LLM: SSE chunks<br/>(data: {"delta":{...}})
+            LLM-->>NL: concatenated canonical SQL
+            NL-->>User: canonical SQL
+        end
+    end
 ```
 
-The args are swapped (`END_AT` is now first because SQLGlot treats it
-as a bare identifier, the unit ended up in a `CAST(...)`), and the
-result is a runtime error. The `vendor_overrides._duckdb_datediff`
-override recognizes the pattern and rewrites it to the canonical
-
-```sql
-DATE_DIFF('second', start_at, end_at)
+```bash
+export SPEAKSQL_USE_LLM=1
+export SPEAKSQL_LLM_BASE_URL=https://api.openai.com/v1
+export SPEAKSQL_LLM_API_KEY=sk-...        # or OPENAI_API_KEY
+export SPEAKSQL_LLM_MODEL=gpt-4o-mini
+export SPEAKSQL_LLM_AUTH_HEADER=x-api-key  # for Anthropic-style endpoints
+export SPEAKSQL_LLM_TIMEOUT_S=30
+export SPEAKSQL_LLM_MAX_TOKENS=512
+export SPEAKSQL_LLM_TEMPERATURE=0.0
 ```
 
-which DuckDB executes correctly.
+---
 
-**Adding your own override:** register a function with the registry:
+## FK-aware SQL generation
+
+When you give SpeakSQL a real schema (via `Backend.introspect()` +
+`foreign_keys()`), the rule-based planner becomes schema-aware: it
+tokenizes the question, matches tokens against table and column names,
+uses the FK metadata to pull in parent tables, and emits canonical SQL
+with the right JOINs.
+
+```mermaid
+flowchart LR
+    Q[Question<br/>"monthly orders by user"]:::input
+    S[Schema<br/>+ FK metadata]:::input
+    P[plan_for_question<br/>(BFS over FK graph)]:::core
+    H[SchemaHint<br/>tables, columns, joins]:::hint
+    R[Rule patterns<br/>or LLM prompt]:::emit
+    SQL[Canonical SQL<br/>+ JOIN clause]:::out
+
+    Q --> P
+    S --> P
+    P --> H
+    H --> R
+    R --> SQL
+
+    classDef input fill:#fef3c7,stroke:#92400e
+    classDef core fill:#dbeafe,stroke:#1e3a8a
+    classDef hint fill:#dcfce7,stroke:#166534
+    classDef emit fill:#f3e8ff,stroke:#581c87
+    classDef out fill:#fce7f3,stroke:#9d174d
+```
+
+The same hint is fed back into the LLM system prompt when the rule
+layer misses, so the LLM also benefits from the FK metadata. BFS over
+the FK graph handles **multi-hop** paths — a question naming
+`users` + `order_items` (no direct FK) automatically pulls in
+`orders` as a bridge.
 
 ```python
-from speaksql.vendor_overrides import register
+from speaksql.backends import backend_for
+from speaksql.schema_aware import plan_for_question, joins_to_sql
 
-@register("bigquery")
-def my_bigquery_fix(sql: str) -> str:
-    # Replace vendor-specific syntax that SQLGlot gets wrong
-    return sql.replace("OLD", "NEW")
+be = backend_for("duckdb", path="./analytics.duckdb")
+schema = be.introspect().with_foreign_keys(be.foreign_keys())
+be.close()
+
+hint = plan_for_question("monthly orders by user", schema)
+print(hint.to_prompt_section())
+# Tables:
+#   orders ((no columns matched))
+#   users ((no columns matched))
+# Joins:
+#   orders.user_id → users.id
 ```
 
-Overrides are pure functions `(sql: str) -> str`, idempotent, and
-applied in registration order.
+---
 
-### JOIN graph
+## JOIN graph
 
-Given a schema (from `Backend.introspect()`), SpeakSQL builds a JOIN
-graph by **preferring real FK constraints** and falling back to a name
-heuristic.
+Given a schema, SpeakSQL builds a JOIN graph by **preferring real FK
+constraints** and falling back to a name heuristic. The HTML output is
+self-contained (no JS, no external CSS, no CDN) and embeds an SVG
+diagram plus a column listing.
 
-Example — a real SpeakSQL-rendered graph for an ecommerce schema
-(users, orders, products, order_items, shipments, reviews) built from
-the FK constraints the database declares:
+**A real ecommerce schema** (users, orders, products, order_items,
+shipments, reviews) — rendered from the FK constraints the database
+declares:
 
 <p align="center">
   <a href="docs/join_graph_example/index.html">
@@ -641,53 +499,79 @@ flowchart TD
     classDef output fill:#f3e8ff,stroke:#581c87
 ```
 
+`suggest_fks()` returns FK candidates the user didn't declare, with a
+confidence score and a reason string. Useful when a schema doesn't have
+real constraints and you want a checklist of "likely FKs" to review.
+
+```python
+from speaksql.graph import suggest_fks
+
+for s in suggest_fks(schema):
+    print(f"{s.confidence:.1f}  {s.from_table}.{s.from_column} → {s.to_table}.{s.to_column}")
+    print(f"           {s.reason}")
+# 0.9  order_items.order_id → orders.id
+#           'order_id' matches 'order_id' pattern; orders.id is PK
+# 0.9  orders.user_id → users.id
+#           'user_id' matches 'user_id' pattern; users.id is PK
+```
+
 Per-backend FK sources:
 
 1. **Real FK constraints (preferred):** SQLite `PRAGMA foreign_key_list`,
-   Postgres `information_schema.referential_constraints` joined with
-   `key_column_usage`, DuckDB `duckdb_constraints()`, Snowflake
-   `information_schema.referential_constraints` (informational only —
-   often empty). BigQuery has no FK concept and returns `()`.
+   Postgres `information_schema.referential_constraints`, DuckDB
+   `duckdb_constraints()`, Snowflake `information_schema` (often empty).
+   BigQuery has no FK concept and returns `()`.
 2. **Name-based heuristic (fallback):** when no FKs are available, we
-   look for `{singular(other)}_id` matching the other table's PK. PK↔PK
-   same-name noise is filtered out. Type mismatches disqualify.
+   look for `{singular(other)}_id` matching the other table's PK.
+   PK↔PK same-name noise is filtered out. Type mismatches disqualify.
 
-CLI:
+---
 
-```bash
-speaksql graph ./analytics.sqlite --backend sqlite --html ./graph.html
-# 4 tables · 2 inferred joins (2 from declared FKs)
-#   order_items <-> orders  via order_id
-#   orders <-> users  via user_id
+## Vendor function overrides
+
+SQLGlot is correct ~95% of the time. The other 5% — cross-dialect
+date functions, vendor-specific NULL handling, HANA's quirky argument
+order — is where `vendor_overrides` comes in. After SQLGlot emits
+SQL, we walk a registry of per-dialect override functions that fix
+specific broken patterns.
+
+Example: `DATEDIFF('second', start_at, end_at)` on DuckDB. SQLGlot
+emits this as
+
+```sql
+DATE_DIFF('END_AT', start_at, CAST('second' AS DATE))
 ```
 
-The HTML is self-contained — no JS, no external CSS, no CDN — and
-embeds an SVG diagram plus a column listing. Service:
+The args are swapped (`END_AT` is now first because SQLGlot treats it
+as a bare identifier, the unit ended up in a `CAST(...)`), and the
+result is a runtime error. The `vendor_overrides._duckdb_datediff`
+override recognizes the pattern and rewrites it to
 
-```bash
-curl -X POST http://localhost:8000/v1/graph \
-  -H 'content-type: application/json' \
-  -d '{"db_path": "./analytics.sqlite", "backend": "sqlite"}'
-# Returns {db_path, backend, nodes, graph, html}
+```sql
+DATE_DIFF('second', start_at, end_at)
 ```
 
-Programmatic:
+which DuckDB executes correctly.
+
+**Adding your own override** is a one-line registration:
 
 ```python
-import speaksql
-from speaksql.backends import backend_for
+from speaksql.vendor_overrides import register
 
-be = backend_for("sqlite", path="./analytics.sqlite")
-schema = be.introspect()
-fks = be.foreign_keys()  # declared FK constraints
-be.close()
-
-g = speaksql.build_join_graph(schema.with_foreign_keys(fks))
-# pass use_real_fks=False to force the name heuristic
-print(g.to_dict())
+@register("bigquery")
+def my_bigquery_fix(sql: str) -> str:
+    # Replace vendor-specific syntax that SQLGlot gets wrong
+    return sql.replace("OLD", "NEW")
 ```
 
-### Semantic diff
+Overrides are pure functions `(sql: str) -> str`, idempotent, and
+applied in registration order. Built-in fixes ship for DuckDB
+DATEDIFF, Postgres SECONDS_BETWEEN / DAYS_BETWEEN / ADD_MONTHS, and
+Snowflake ADD_MONTHS.
+
+---
+
+## Semantic diff
 
 Compare two SQL strings (possibly from different dialects) and see the
 **semantic** differences — not just textual ones:
@@ -701,28 +585,17 @@ stateDiagram-v2
         [*] --> Projections
         Projections --> FunctionCall: same fn,<br/>different args
         Projections --> Literal: same value,<br/>different quoting
-        Projections --> Next: projections differ
-        FunctionCall --> Next
-        Literal --> Next
-
-        Next --> Where
+        FunctionCall --> Where
+        Literal --> Where
         Where --> Predicate: function rewrite<br/>detected
         Where --> Structural: predicates differ
-        Predicate --> Out
-        Structural --> Out
-
-        Out --> OrderBy
+        Predicate --> OrderBy
+        Structural --> OrderBy
         OrderBy --> NullOrdering: NULLS FIRST/LAST
         OrderBy --> DistinctSyntax: ASC/DESC
         OrderBy --> Limit: TOP/LIMIT
-        NullOrdering --> [*]
-        DistinctSyntax --> [*]
-        Limit --> [*]
-
         OrderBy --> Cast
         Cast --> TypeName: DOUBLE vs FLOAT8
-        TypeName --> [*]
-
         OrderBy --> From
         From --> Structural: source tables differ
     }
@@ -731,83 +604,53 @@ stateDiagram-v2
     Report --> [*]
 ```
 
-Categories detected:
-
-- `function_call` (same function, different call form)
-- `null_ordering` (NULLS FIRST/LAST)
-- `distinct_syntax` (TOP vs LIMIT, ASC vs DESC)
-- `type_name` (DOUBLE PRECISION vs FLOAT8)
-- `literal` (same value, different quoting)
-- `predicate` (different WHERE clause)
-- `structural` (different tables/projections)
+Categories detected: `function_call`, `null_ordering`,
+`distinct_syntax`, `type_name`, `literal`, `predicate`, `structural`.
 
 ```python
 import speaksql
 
-# Same canonical query, transpiled to Postgres and BigQuery
-postgres = "SELECT id FROM t ORDER BY id ASC NULLS LAST"
-bigquery = "SELECT id FROM t ORDER BY id ASC"
-
-diffs = speaksql.semantic_diff(postgres, bigquery, dialect_a="postgres", dialect_b="bigquery")
+diffs = speaksql.semantic_diff(
+    "SELECT id FROM t ORDER BY id ASC NULLS LAST",
+    "SELECT id FROM t ORDER BY id ASC",
+    dialect_a="postgres", dialect_b="bigquery",
+)
 print(speaksql.format_diff(diffs))
-```
-
-Output:
-
-```
-1 semantic difference(s):
-  1. [null_ordering] @ ORDER BY #0
-     a: 'NULLS LAST'
-     b: 'NULLS FIRST'  (null ordering differs)
-```
-
-CLI:
-
-```bash
-speaksql diff "SELECT id FROM t ORDER BY id ASC NULLS LAST" \
-            "SELECT id FROM t ORDER BY id ASC" --json
-```
-
-Service:
-
-```bash
-curl -X POST http://localhost:8000/v1/diff \
-  -H 'content-type: application/json' \
-  -d '{"sql_a": "SELECT id FROM t ORDER BY id ASC NULLS LAST",
-       "sql_b": "SELECT id FROM t ORDER BY id ASC"}'
-# {"identical": false, "differences": [{"category": "null_ordering", ...}]}
+# 1 semantic difference(s):
+#   1. [null_ordering] @ ORDER BY #0
+#      a: 'NULLS LAST'
+#      b: 'NULLS FIRST'  (null ordering differs)
 ```
 
 ---
 
 ## Supported dialects
 
-| Dialect | Identifier | Aliases | Status | Live FK introspection |
+| Dialect | Identifier | Aliases | Live backend | Live FK introspection |
 |---|---|---|---|---|
-| PostgreSQL | `postgres` | — | ✅ native + backend | ✅ `information_schema.referential_constraints` |
-| MySQL | `mysql` | — | ✅ native + backend | ✅ `information_schema.key_column_usage` |
-| SQL Server | `tsql` | `mssql`, `sqlserver` | ✅ native + backend | ✅ `sys.foreign_keys` |
-| Snowflake | `snowflake` | — | ✅ native + backend | ✅ informational only — often empty |
-| BigQuery | `bigquery` | — | ✅ native + backend | ❌ no FK concept in BigQuery DDL |
-| Databricks / Spark | `spark` | `databricks` | ✅ native + backend | ❌ Spark catalog doesn't expose FK metadata |
-| DuckDB | `duckdb` | — | ✅ native + backend | ✅ `duckdb_constraints()` |
-| SQLite | `sqlite` | — | ✅ native + backend (bundled) | ✅ `PRAGMA foreign_key_list` |
-| SAP HANA | `hana` | `saphana` | ✅ vendor (see [HANA dialect](#sap-hana-hana)) | ❌ not yet exposed |
+| PostgreSQL | `postgres` | — | ✅ | ✅ `information_schema.referential_constraints` |
+| MySQL | `mysql` | — | ✅ PyMySQL | ✅ `information_schema.key_column_usage` |
+| SQL Server | `tsql` | `mssql`, `sqlserver` | ✅ pymssql | ✅ `sys.foreign_keys` |
+| Snowflake | `snowflake` | — | ✅ `snowflake-connector` | ⚠️ often empty |
+| BigQuery | `bigquery` | — | ✅ `google-cloud-bigquery` | ❌ no FK concept in BigQuery |
+| Databricks / Spark | `spark` | `databricks` | ✅ PySpark | ❌ Spark catalog doesn't expose FKs |
+| DuckDB | `duckdb` | — | ✅ in-process | ✅ `duckdb_constraints()` |
+| SQLite | `sqlite` | — | ✅ bundled | ✅ `PRAGMA foreign_key_list` |
+| SAP HANA | `hana` | `saphana` | vendor dialect | ❌ not yet exposed |
 
-### SAP HANA (`hana`)
+### SAP HANA
 
-SpeakSQL ships a vendor-side HANA dialect (`src/speaksql/dialects/hana.py`)
-that subclasses SQLGlot's Postgres parser. Upstream SQLGlot does not yet
-ship a HANA dialect, so we maintain one locally.
-
-The HANA dialect:
+SpeakSQL ships a vendor-side HANA dialect
+(`src/speaksql/dialects/hana.py`) that subclasses SQLGlot's Postgres
+parser. Upstream SQLGlot does not yet ship a HANA dialect, so we
+maintain one locally:
 
 - Inherits Postgres grammar (HANA is broadly ANSI-compatible)
 - Removes Postgres's 2-arity `MAP` binding — HANA's `MAP(k1, v1, k2, v2, ...)`
   takes variable even-arity pairs
 - Roundtrips HANA-specific functions through unchanged: `ADD_MONTHS`,
   `DAYS_BETWEEN`, `SECONDS_BETWEEN`, `SERIES_GENERATE_DATE`,
-  `BINNING`, `TO_VARCHAR`, `IFNULL`, etc.
+  `BINNING`, `TO_VARCHAR`, `IFNULL`
 
 When upstream SQLGlot ships a real HANA dialect, this module either
 inherits from it or becomes a thin shim — callers don't notice.
@@ -818,24 +661,13 @@ inherits from it or becomes a thin shim — callers don't notice.
 
 ```mermaid
 flowchart TB
-    subgraph Input[" "]
-        Q["NL question<br/>or canonical SQL"]
-    end
-
-    subgraph Discover["Schema Discovery"]
-        I1["introspect():<br/>tables + columns"]:::core
-        I2["foreign_keys():<br/>FK constraints"]:::core
-    end
-
-    subgraph Plan["Planning"]
-        L["Schema Linking<br/>NL → tables, cols, predicates"]:::plan
-        C["Canonical Plan<br/>(dialect-agnostic AST)"]:::plan
-    end
-
-    subgraph Emit["Dialect Emission"]
-        E["SQLGlot transpile<br/>+ vendor dialect overrides"]:::emit
-        H["Hana dialect<br/>(local Postgres subclass)"]:::vendor
-    end
+    Q["NL question<br/>or canonical SQL"]:::input
+    I1[introspect():<br/>tables + columns]:::core
+    I2[foreign_keys():<br/>FK constraints]:::core
+    L["FK-aware planner<br/>(plan_for_question)"]:::plan
+    C["Canonical Plan<br/>(dialect-agnostic AST)"]:::plan
+    E["SQLGlot transpile<br/>+ vendor_overrides"]:::emit
+    H["HANA dialect<br/>(local Postgres subclass)"]:::vendor
 
     Q --> L
     I1 --> L
@@ -844,33 +676,34 @@ flowchart TB
     C --> E
     E --> H
 
-    E --> PG[(PostgreSQL)]
-    E --> MY[(MySQL)]
-    E --> TS[(T-SQL)]
-    E --> SF[(Snowflake)]
-    E --> BQ[(BigQuery)]
-    E --> SP[(Spark)]
-    E --> DU[(DuckDB)]
-    E --> SQ[(SQLite)]
-    E --> HA[(SAP HANA)]
+    E --> PG[(PostgreSQL)]:::out
+    E --> MY[(MySQL)]:::out
+    E --> TS[(T-SQL)]:::out
+    E --> SF[(Snowflake)]:::out
+    E --> BQ[(BigQuery)]:::out
+    E --> SP[(Spark)]:::out
+    E --> DU[(DuckDB)]:::out
+    E --> SQ[(SQLite)]:::out
+    E --> HA[(SAP HANA)]:::out
 
-    subgraph Tools["Orthogonal tools"]
-        LL["LLM Planner<br/>(opt-in)"]:::tool
-        DF["Semantic Diff"]:::tool
-        JG["JOIN Graph<br/>(real FKs → heuristic)"]:::tool
-    end
-
-    Q -.->|if SPEAKSQL_USE_LLM=1| LL
-    Q -.rule.- DF
-    I1 -.fk.-> JG
+    Q -.opt-in.-> LL["LLM Planner<br/>(examples + instructions)"]:::tool
+    C -.-> DF["Semantic Diff"]:::tool
+    I1 -.fk.-> JG["JOIN Graph<br/>(real FKs → heuristic)"]:::tool
     I2 -.fk.-> JG
 
-    classDef core fill:#fef3c7,stroke:#92400e
-    classDef plan fill:#dbeafe,stroke:#1e3a8a
-    classDef emit fill:#dcfce7,stroke:#166534
+    classDef input fill:#fef3c7,stroke:#92400e
+    classDef core fill:#dbeafe,stroke:#1e3a8a
+    classDef plan fill:#dcfce7,stroke:#166534
+    classDef emit fill:#f3e8ff,stroke:#581c87
     classDef vendor fill:#fce7f3,stroke:#9d174d
-    classDef tool fill:#f3e8ff,stroke:#581c87
+    classDef out fill:#f5f5f4,stroke:#57534e
+    classDef tool fill:#e0f2fe,stroke:#0c4a6e
 ```
+
+The canonical plan is dialect-agnostic — you write ANSI SQL once. The
+vendor dialect modules are narrow: only the things SQLGlot misses
+(HANA's `MAP` arity, T-SQL edge cases, BigQuery FK-less introspection).
+The rest of the work is done by SQLGlot.
 
 Three orthogonal tools complement the transpile pipeline:
 
@@ -880,10 +713,25 @@ Three orthogonal tools complement the transpile pipeline:
 - **JOIN graph** — uses real FKs first, name heuristic second.
   Self-contained HTML output.
 
-* The canonical plan is dialect-agnostic — you write ANSI SQL once.
-* The vendor dialects are narrow: only the things SQLGlot misses (HANA's
-  `MAP` arity, T-SQL edge cases, BigQuery FK-less introspection). The
-  rest of the work is done by SQLGlot.
+---
+
+## Honest about limits
+
+- **HANA** is a vendor dialect, not a SQLGlot upstream one. We
+  subclass Postgres; long-term HANA-specific parsing should move
+  upstream.
+- **BigQuery** has no FK concept in its DDL, so the FK introspection
+  layer returns `()` and we fall back to the name heuristic. The
+  heuristic is reasonable but not perfect.
+- **Snowflake** FK introspection is informational only and often
+  returns empty in production warehouses; same fallback applies.
+- **No fabrication in NL→SQL.** If the rule layer misses and the LLM
+  is disabled, we return a syntactically valid placeholder with the
+  original question preserved as a comment, not a hallucinated query.
+- **LLM accuracy depends on the model and your example library.** A
+  well-curated 50-pair library usually outperforms a generic model on
+  a single few-shot prompt. The eval harness at
+  `examples/llm_eval/run.py` helps you measure.
 
 ---
 
@@ -899,83 +747,78 @@ uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
 ```
 
-**Project layout:**
+**Project layout** (the real tree — the architecture diagram above
+maps 1:1):
 
 ```
 speaksql/
 ├── src/speaksql/
 │   ├── core.py                # plan() / emit() / transpile()
 │   ├── introspect.py          # SchemaList + ForeignKeyInfo
-│   ├── nl.py                  # rule-based NL → canonical SQL (with LLM fallback)
+│   ├── nl.py                  # rule-based NL → canonical SQL (+ LLM fallback)
 │   ├── llm.py                 # LLMProvider, MockProvider, OpenAICompatibleProvider
+│   │                          # + streaming (sync + async)
 │   ├── schema_aware.py        # FK-aware planner (plan_for_question, joins_to_sql)
+│   ├── planner.py             # multi-step state-machine planner (advanced mode)
+│   ├── examples.py            # example-query library + BM25/Embedding retrievers
 │   ├── diff.py                # semantic_diff + DiffEntry
-│   ├── graph.py               # JOIN graph builder + HTML renderer
+│   ├── graph.py               # JOIN graph builder + HTML renderer + suggest_fks
 │   ├── vendor_overrides.py    # per-dialect textual fixes for SQLGlot bugs
-│   ├── cli.py                 # `speaksql` command (ask, diff, graph, dialects)
-│   ├── service.py             # FastAPI app (optional)
+│   ├── cli.py                 # `speaksql` command (ask, format, diff, graph, repl)
+│   ├── service.py             # FastAPI app (REST + WebSocket)
 │   ├── exceptions.py
-│   ├── backends/              # per-dialect DB drivers (SQLite, DuckDB,
-│   │                          #   Postgres, MySQL, MSSQL, Snowflake,
-│   │                          #   BigQuery, Spark/Databricks)
+│   ├── backends/              # per-dialect DB drivers (8 backends, lazy import)
+│   │                          #   sqlite, duckdb, postgres, mysql, mssql,
+│   │                          #   snowflake, bigquery, spark
 │   └── dialects/              # vendor dialects (hana.py)
 ├── tests/                     # 262 tests across 35 files
 ├── examples/
 │   ├── demo_all_dialects.py
+│   ├── example_library.jsonl  # 7 hand-curated few-shot examples
 │   └── llm_eval/              # eval harness + eval_set.jsonl
-└── .github/workflows/         # CI: Python 3.11, 3.12, 3.13
+├── docs/                      # JOIN graph example (SVG + HTML)
+└── .github/workflows/         # CI: Python 3.11/3.12/3.13 + OpenJDK 17 for live Spark
 ```
 
 ---
 
 ## Roadmap
 
-All roadmap items from the original v0.1 launch are shipped:
+**Shipped** (every item from the v0.1 → v0.10 roadmap):
 
-- [x] ~~Real HANA dialect~~ — shipped via `src/speaksql/dialects/hana.py`
-      (vendor dialect subclassing Postgres)
-- [x] ~~Postgres / Snowflake / BigQuery / DuckDB backends~~ — shipped
-      via per-dialect extras (`[postgres]`, `[duckdb]`, `[snowflake]`,
-      `[bigquery]`, `[backends]`)
-- [x] ~~LLM-backed NL planner behind a feature flag~~ — shipped via
-      `src/speaksql/llm.py` (`SPEAKSQL_USE_LLM=1`)
-- [x] ~~Semantic diff mode between two dialect emissions~~ — shipped
-      via `src/speaksql/diff.py` (`speaksql diff`, `/v1/diff`)
-- [x] ~~JOIN graph visualizer for the linked schema~~ — shipped via
-      `src/speaksql/graph.py` (`speaksql graph`, `/v1/graph`)
-- [x] ~~Read real FK constraints from `information_schema.referential_constraints`
-      instead of name heuristics~~ — shipped; SQLite `PRAGMA`, Postgres
-      `information_schema`, DuckDB `duckdb_constraints()`, Snowflake
-      `information_schema`, BigQuery (no-op)
-- [x] ~~MySQL and SQL Server backends (currently transpile-only)~~ —
-      shipped; PyMySQL + pymssql respectively
-- [x] ~~Streaming LLM provider for long SQL generation~~ — shipped via
-      `OpenAICompatibleProvider.stream()` (SSE) and
-      `llm_to_canonical_streaming()`
-- [x] ~~WebSocket `/v1/ask` endpoint with partial-response streaming~~ —
-      shipped; emits `llm_token` / `canonical` / `transpile` / `done`
-      frames incrementally
-- [x] ~~Databricks / Spark backend (currently transpile-only)~~ —
-      shipped; PySpark driver with `master="local[*]"` for testing or
-      `sc://...databricks.com:443/...` for Databricks Connect
-- [x] ~~FK-aware SQL generation (use graph knowledge to choose joins)~~
-      — shipped via `speaksql.schema_aware.plan_for_question()`;
-      auto-enabled in CLI when `--db-path` is given
-- [x] ~~Custom Snowflake / BigQuery / HANA vendor overrides~~ —
-      shipped via `vendor_overrides.py` registry; current override fixes
-      DuckDB DATEDIFF argument swapping (SQLGlot bug)
+- ✅ Real HANA dialect (`src/speaksql/dialects/hana.py`)
+- ✅ Live backends for Postgres, Snowflake, BigQuery, DuckDB, MySQL,
+  MSSQL, Spark/Databricks (8 backends, lazy driver import)
+- ✅ LLM-backed NL planner with `SPEAKSQL_USE_LLM=1` (no SDK, stdlib `urllib`)
+- ✅ Streaming LLM provider (`OpenAICompatibleProvider.stream()` +
+  `llm_to_canonical_streaming_async`)
+- ✅ WebSocket `/v1/ask` endpoint with `llm_token` / `canonical` /
+  `transpile` / `done` frames
+- ✅ FK-aware SQL generation (`plan_for_question()` + multi-hop BFS)
+- ✅ JOIN graph visualizer with FK-suggestions
+- ✅ Semantic diff between two dialect emissions
+- ✅ Vendor function override registry (`vendor_overrides.py`)
+- ✅ Fabric-style NL2SQL: example-query library (BM25 + Embedding
+  retrievers), per-source instructions, multi-step state-machine planner
+- ✅ `speaksql format` subcommand (canonicalize / cross-dialect conversion
+  without an LLM)
+- ✅ `speaksql repl` (interactive loop with FK awareness + dialect switching)
+- ✅ `/v1/health` + `/v1/schema` endpoints
 
-New ideas being considered:
+**Next up** (open ideas, not committed):
 
-- [ ] More vendor overrides (BigQuery SAFE_DIVIDE → IIF pattern,
-      Snowflake DATEADD arg-order quirks, HANA date arithmetic)
-- [ ] Multi-hop JOIN path planning (currently only direct edges)
+- [ ] More vendor overrides (BigQuery `SAFE_DIVIDE` → `IIF`, Snowflake
+      `DATEADD` arg-order quirks, HANA date arithmetic)
+- [ ] Embedding-backed eval harness (precision@K, MRR) on a held-out set
+- [ ] `speaksql migrate` — emit `ALTER TABLE` statements from
+      `suggest_fks()` to turn heuristic suggestions into real constraints
+- [ ] `/v1/explain` endpoint — return the SQLGlot parse tree as JSON
 
 ---
 
 ## Contributing
 
-Issues and PRs welcome — please open one at
+Issues and PRs welcome at
 [github.com/rollroyces/speaksql/issues](https://github.com/rollroyces/speaksql/issues).
 For significant changes, file an issue first so we can agree on scope.
 
@@ -985,12 +828,12 @@ For significant changes, file an issue first so we can agree on scope.
 
 **AGPL-3.0-or-later** — see [LICENSE](LICENSE).
 
-A commercial license is available for teams who want to embed SpeakSQL in
-proprietary products without the AGPL obligations.
-Contact Royce for terms.
+A commercial license is available for teams who want to embed SpeakSQL
+in proprietary products without the AGPL obligations. Contact Royce
+for terms.
 
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 262 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 262 tests green · Inspired by Microsoft Fabric NL2SQL</sub>
 </p>
