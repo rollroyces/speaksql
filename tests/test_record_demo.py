@@ -196,3 +196,51 @@ def test_player_assets_present():
         p = DOCS_DIR / "static" / name
         assert p.exists(), f"missing {p}"
         assert p.stat().st_size > 1000, f"{p} suspiciously small"
+
+
+# ---------------------------------------------------------------------------
+# Mermaid block syntax check — GitHub's renderer is strict.
+# ---------------------------------------------------------------------------
+
+
+def test_mermaid_blocks_have_valid_bracket_quoting():
+    """Each Mermaid block must use GitHub-compatible bracket syntax.
+
+    GitHub's Mermaid parser is strict about unescaped double quotes
+    inside `[...]` shape labels. When the label text contains `<br/>`
+    it gets interpreted as multiple nodes on one line; an unescaped
+    `"` in that text (e.g. `Q["text with \"quoted\" word"]`) trips the
+    parser and breaks the whole diagram.
+
+    The fix: wrap the whole `[...]` label in outer double quotes so
+    the entire string is one token. Every Mermaid block in this file
+    follows that convention; if you add a new one and skip the outer
+    quotes, this test will catch it.
+    """
+    import re
+
+    readme = (REPO_ROOT / "README.md").read_text()
+    blocks = re.findall(r"```mermaid\n(.*?)```", readme, re.DOTALL)
+    assert blocks, "expected at least one ```mermaid block in README.md"
+
+    issues: list[str] = []
+    for block_idx, block in enumerate(blocks, 1):
+        for line in block.splitlines():
+            # Match a node declaration: IDENTIFIER[content] possibly
+            # followed by `:::class` and optionally edge text.
+            m = re.match(r"\s*[A-Za-z0-9_]+\[([^\]]*)\]", line)
+            if not m:
+                continue
+            label = m.group(1)
+            # If the label has any " in it, the outer [ must start with
+            # " so the whole label is one quoted token.
+            if '"' in label and not label.startswith('"'):
+                issues.append(
+                    f"Block {block_idx}, line: {line.strip()!r}\n"
+                    f"  label contains '\"' but is not wrapped in outer "
+                    f"double quotes — wrap the entire [...] in \"...\"."
+                )
+
+    assert not issues, (
+        "Mermaid block(s) have invalid bracket quoting:\n" + "\n".join(issues)
+    )

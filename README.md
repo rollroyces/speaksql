@@ -426,12 +426,12 @@ with the right JOINs.
 
 ```mermaid
 flowchart LR
-    Q[Question<br/>"monthly orders by user"]:::input
-    S[Schema<br/>+ FK metadata]:::input
-    P[plan_for_question<br/>(BFS over FK graph)]:::core
-    H[SchemaHint<br/>tables, columns, joins]:::hint
-    R[Rule patterns<br/>or LLM prompt]:::emit
-    SQL[Canonical SQL<br/>+ JOIN clause]:::out
+    Q["Question<br/>monthly orders by user"]:::input
+    S["Schema<br/>+ FK metadata"]:::input
+    P["plan_for_question<br/>(BFS over FK graph)"]:::core
+    H["SchemaHint<br/>tables, columns, joins"]:::hint
+    R["Rule patterns<br/>or LLM prompt"]:::emit
+    SQL["Canonical SQL<br/>+ JOIN clause"]:::out
 
     Q --> P
     S --> P
