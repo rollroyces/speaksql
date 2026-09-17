@@ -63,11 +63,13 @@ copy-paste and no dialect-specific debugging.*
   type aliases, structural). Not just textual.
 - 🗺️ **JOIN graph visualizer** — self-contained HTML diagrams from schema
   + FK metadata.
-- ✅ **226 tests passing** — unit + integration, including live SQLite
+- ✅ **262 tests passing** — unit + integration, including live SQLite
   and DuckDB roundtrips, fake-server SSE streaming, WebSocket
   end-to-end frames, 17 vendor-override regression tests, 20 REPL
-  subprocess-driven tests, 10 CLI `format` tests, 3 async-LLM
-  streaming tests, and 8 `suggest_fks` heuristic-FK tests.
+  subprocess-driven tests, 10 CLI `format` tests, 8 `suggest_fks`
+  tests, 14 multi-step planner state-machine tests, 15
+  example-library/embeddings tests, and 4 NL2SQL feature tests
+  (`--examples`/`--instructions`/inline/advanced).
 - 🎯 **Honest about limits** — vendor dialect for HANA (upstream SQLGlot
   lacks one); BigQuery has no FK concept; no fabrication in NL→SQL.
 - 📜 **Dual-licensed** — AGPL-3.0-or-later for open source, commercial
@@ -486,6 +488,69 @@ PYTHONPATH=src python examples/llm_eval/run.py
 Pass `--provider openai` (with `SPEAKSQL_LLM_BASE_URL` set) to evaluate
 against a real LLM.
 
+### Example-query library (Fabric-style RAG)
+
+Build up a JSONL file of `(question, sql)` pairs that reflect your
+business vocabulary and conventions. At NL-to-SQL time the top-K
+matches are injected as few-shot examples into the LLM system prompt.
+
+```bash
+# Use the bundled library
+speaksql ask "monthly revenue by country" --examples examples/example_library.jsonl
+
+# Or your own
+speaksql ask "active enterprise customers in Q4" \
+  --examples ./our-team/fewshots.jsonl
+```
+
+The default retriever is BM25 (no external API). For higher recall
+on longer queries, plug in any OpenAI-compatible embeddings endpoint
+via `speaksql.examples.EmbeddingRetriever`.
+
+### Per-source instructions
+
+A plain-text file with rules that travel with the data source —
+"FABRIC-style data source instructions":
+
+```bash
+speaksql ask "show me last quarter's bookings" \
+  --instructions ./sales-db-rules.txt \
+  --db-path ./sales.db
+```
+
+The instructions file is appended to the LLM system prompt under a
+`## Instructions` header so the model sees them after the schema
+context block.
+
+### Multi-step planner (`advanced`)
+
+SpeakSQL's standard path is one LLM call. The `advanced` mode runs a
+state machine — `IdentifyTables` → `IdentifyColumns` → `GenerateSQL`
+→ `SyntacticValidate` → `BusinessValidate` — with self-correction on
+parse errors and column-reference errors, up to a configurable
+retry budget. Inspired by Microsoft Fabric's "Advanced NL2SQL" and
+the Semantic Kernel Process Framework.
+
+```bash
+speaksql ask "users who never placed an order" \
+  --db-path ./sales.db --advanced
+```
+
+```python
+from speaksql.planner import run_planner
+
+result = run_planner(
+    "users who never placed an order",
+    advanced=True,
+    schema=schema,
+    instructions="Treat NULL refunds as zero",
+    examples=few_shots,
+    max_retries=2,
+)
+print(result.state.canonical_sql)
+print(result.state.stages_run)   # ['identify_tables', ..., 'business_validate']
+```
+
 ### Vendor function overrides
 
 SQLGlot is correct ~95% of the time. The other 5% — cross-dialect
@@ -828,7 +893,7 @@ Three orthogonal tools complement the transpile pipeline:
 git clone https://github.com/rollroyces/speaksql
 cd speaksql
 uv sync --all-extras
-uv run pytest            # 226 tests
+uv run pytest            # 262 tests
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -854,7 +919,7 @@ speaksql/
 │   │                          #   Postgres, MySQL, MSSQL, Snowflake,
 │   │                          #   BigQuery, Spark/Databricks)
 │   └── dialects/              # vendor dialects (hana.py)
-├── tests/                     # 226 tests across 32 files
+├── tests/                     # 262 tests across 35 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   └── llm_eval/              # eval harness + eval_set.jsonl
@@ -927,5 +992,5 @@ Contact Royce for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 226 tests green</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 262 tests green</sub>
 </p>

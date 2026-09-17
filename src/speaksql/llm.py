@@ -293,7 +293,11 @@ def make_provider() -> LLMProvider:
 
 
 def _build_messages(
-    question: str, schema_hint: str | None = None
+    question: str,
+    schema_hint: str | None = None,
+    *,
+    extra_system: str | None = None,
+    examples: Sequence[tuple[str, str]] | None = None,
 ) -> list[dict[str, str]]:
     """Assemble the OpenAI-shaped message list for the LLM call.
 
@@ -303,14 +307,27 @@ def _build_messages(
     If `schema_hint` is provided, it is appended to the system prompt as
     a "Schema context" block — that's how FK-aware planning flows into
     the LLM even when the rule layer missed.
+
+    If `extra_system` is provided, it is appended verbatim to the
+    system prompt. This is how per-source instructions flow into the
+    LLM call without forcing a system-prompt rewrite.
+
+    If `examples` is provided, those (user, assistant) pairs are
+    inserted between the system prompt and the user's question instead
+    of the static `FEW_SHOT_EXAMPLES`. The retriever-fitted examples
+    drive accuracy for unfamiliar domains.
     """
     system = SYSTEM_PROMPT
     if schema_hint:
         system += "\n\n## Schema context\n" + schema_hint
+    if extra_system:
+        system += "\n\n## Instructions\n" + extra_system
+
+    shots = examples if examples is not None else FEW_SHOT_EXAMPLES
     return [
         {"role": "system", "content": system},
-        *({"role": "user", "content": q} for q, _ in FEW_SHOT_EXAMPLES),
-        *({"role": "assistant", "content": sql} for _, sql in FEW_SHOT_EXAMPLES),
+        *({"role": "user", "content": q} for q, _ in shots),
+        *({"role": "assistant", "content": sql} for _, sql in shots),
         {"role": "user", "content": question},
     ]
 
@@ -319,6 +336,9 @@ def llm_to_canonical(
     question: str,
     provider: LLMProvider | None = None,
     schema_hint: str | None = None,
+    *,
+    instructions: str | None = None,
+    examples: Sequence[tuple[str, str]] | None = None,
 ) -> str:
     """Translate a natural-language question into canonical ANSI SQL via LLM.
 
@@ -330,12 +350,27 @@ def llm_to_canonical(
     inject a schema summary into the system prompt — useful when the
     FK-aware planner has already pinned down which tables are relevant.
 
+    Pass `instructions` to append per-source guidance to the system
+    prompt (e.g. "use lowercase column aliases", "always include
+    created_at in projections").
+
+    Pass `examples` to override the static few-shot set with a
+    retriever-fitted list of (question, sql) pairs. Top-K from an
+    `ExampleStore` is the canonical use.
+
     The returned string is whatever the model produced; we strip leading
     whitespace and trailing whitespace but don't try to parse/validate.
     Validation happens downstream in `plan()`.
     """
     provider = provider or make_provider()
-    raw = provider.complete(_build_messages(question, schema_hint=schema_hint))
+    raw = provider.complete(
+        _build_messages(
+            question,
+            schema_hint=schema_hint,
+            extra_system=instructions,
+            examples=examples,
+        )
+    )
     return raw.strip()
 
 
@@ -343,6 +378,9 @@ def llm_to_canonical_streaming(
     question: str,
     provider: LLMProvider | None = None,
     schema_hint: str | None = None,
+    *,
+    instructions: str | None = None,
+    examples: Sequence[tuple[str, str]] | None = None,
 ) -> Iterable[str]:
     """Streaming variant of `llm_to_canonical`.
 
@@ -352,13 +390,23 @@ def llm_to_canonical_streaming(
     exception propagates out of the generator at iteration time.
     """
     provider = provider or make_provider()
-    return provider.stream(_build_messages(question, schema_hint=schema_hint))
+    return provider.stream(
+        _build_messages(
+            question,
+            schema_hint=schema_hint,
+            extra_system=instructions,
+            examples=examples,
+        )
+    )
 
 
 async def llm_to_canonical_streaming_async(
     question: str,
     provider: LLMProvider | None = None,
     schema_hint: str | None = None,
+    *,
+    instructions: str | None = None,
+    examples: Sequence[tuple[str, str]] | None = None,
 ) -> AsyncIterator[str]:
     """Async variant of `llm_to_canonical_streaming`.
 
@@ -375,7 +423,12 @@ async def llm_to_canonical_streaming_async(
     from concurrent.futures import ThreadPoolExecutor
 
     provider = provider or make_provider()
-    messages = _build_messages(question, schema_hint=schema_hint)
+    messages = _build_messages(
+        question,
+        schema_hint=schema_hint,
+        extra_system=instructions,
+        examples=examples,
+    )
 
     # Use a dedicated single-worker executor to keep chunks in order.
     # In practice each chunk arrives on the order of milliseconds, so

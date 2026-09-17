@@ -14,6 +14,7 @@ Public API:
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 # Patterns are tried in order; first match wins. Keep them conservative
 # — SpeakSQL is honest about what it handles without an LLM.
@@ -40,7 +41,13 @@ _PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 )
 
 
-def nl_to_canonical(question: str, schema: object | None = None) -> str:
+def nl_to_canonical(
+    question: str,
+    schema: object | None = None,
+    *,
+    instructions: str | None = None,
+    examples: Sequence[tuple[str, str]] | None = None,
+) -> str:
     """Translate a natural-language question into a canonical SQL string.
 
     Three-tier behavior:
@@ -105,7 +112,12 @@ def nl_to_canonical(question: str, schema: object | None = None) -> str:
         llm_to_canonical = None  # type: ignore[assignment]
     if is_llm_enabled() and llm_to_canonical is not None:
         try:
-            return llm_to_canonical(q, schema_hint=schema_hint_text or None)
+            return llm_to_canonical(
+                q,
+                schema_hint=schema_hint_text or None,
+                instructions=instructions,
+                examples=examples,
+            )
         except Exception as e:  # noqa: BLE001
             # LLM unavailable / timed out / failed validation — log and fall through.
             import logging

@@ -67,6 +67,28 @@ def main() -> None:
         "When set, also enables FK-aware SQL generation against the schema."
     ),
 )
+@click.option(
+    "--instructions",
+    "instructions_path",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    default=None,
+    help=(
+        "Path to a file with per-source instructions appended to the LLM "
+        "system prompt (e.g. 'always use lowercase aliases', 'treat null "
+        "amounts as zero'). Plain text; one paragraph is enough."
+    ),
+)
+@click.option(
+    "--examples",
+    "examples_path",
+    type=click.Path(path_type=Path, exists=True, dir_okay=False),
+    default=None,
+    help=(
+        "Path to a JSONL example-query library. Each line is an object with "
+        "'question' and 'sql' fields; top-K matches by BM25 are injected "
+        "as few-shot examples into the LLM system prompt."
+    ),
+)
 def ask(
     question: str | None,
     dialects: tuple[str, ...],
@@ -74,6 +96,8 @@ def ask(
     as_json: bool,
     execute_on: str | None,
     db_path: str | None,
+    instructions_path: Path | None,
+    examples_path: Path | None,
 ) -> None:
     """Translate QUESTION (NL or canonical SQL) into target-dialect SQL.
 
@@ -90,7 +114,31 @@ def ask(
     if db_path is not None and not is_sql:
         schema = _introspect_for_path(db_path)
 
-    canonical = question if is_sql else nl_to_canonical(question, schema=schema)
+    # Per-source instructions + example library flow into the LLM
+    # system prompt only when the LLM is actually invoked. The rule
+    # layer (nl_to_canonical) doesn't see them; that's by design —
+    # the rules are deterministic and don't need hints.
+    instructions: str | None = None
+    if instructions_path is not None:
+        instructions = instructions_path.read_text(encoding="utf-8").strip() or None
+
+    examples: list[tuple[str, str]] | None = None
+    if examples_path is not None:
+        from speaksql.examples import (
+            BM25Retriever,
+            load_examples_from_jsonl,
+        )
+
+        lib = load_examples_from_jsonl(examples_path)
+        hits = BM25Retriever().retrieve(question, lib, top_k=5)
+        examples = [(h.example.question, h.example.sql) for h in hits] or None
+
+    canonical = question if is_sql else nl_to_canonical(
+        question,
+        schema=schema,
+        instructions=instructions,
+        examples=examples,
+    )
     targets: Iterable[str] = dialects or sorted(SUPPORTED_DIALECTS)
     out = transpile(canonical, targets)
 

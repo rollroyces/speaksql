@@ -9,6 +9,17 @@ from __future__ import annotations
 
 from speaksql.core import SUPPORTED_DIALECTS, Dialect, Plan, emit, plan, transpile
 from speaksql.diff import DiffEntry, format_diff, semantic_diff
+from speaksql.examples import (
+    BM25Retriever,
+    DeterministicHashRetriever,
+    EmbeddingRetriever,
+    EmbeddingsProvider,
+    Example,
+    HashedEmbeddingsProvider,
+    RetrievedExample,
+    Retriever,
+    load_examples_from_jsonl,
+)
 from speaksql.exceptions import SpeakSQLError, TranspileError, UnsupportedDialectError
 from speaksql.graph import FKSuggestion, JoinGraph, build_join_graph, render_html, suggest_fks
 from speaksql.introspect import introspect
@@ -33,15 +44,23 @@ except ImportError:  # pragma: no cover
 __version__ = "0.1.0"
 __all__ = [
     "SUPPORTED_DIALECTS",
+    "BM25Retriever",
+    "DeterministicHashRetriever",
     "Dialect",
     "DiffEntry",
+    "EmbeddingRetriever",
+    "EmbeddingsProvider",
+    "Example",
     "FKSuggestion",
+    "HashedEmbeddingsProvider",
     "JoinGraph",
     "LLMError",
     "LLMProvider",
     "MockProvider",
     "OpenAICompatibleProvider",
     "Plan",
+    "RetrievedExample",
+    "Retriever",
     "SpeakSQLError",
     "TranspileError",
     "UnsupportedDialectError",
@@ -54,6 +73,7 @@ __all__ = [
     "llm_to_canonical",
     "llm_to_canonical_streaming",
     "llm_to_canonical_streaming_async",
+    "load_examples_from_jsonl",
     "make_provider",
     "plan",
     "render_html",

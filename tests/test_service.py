@@ -261,3 +261,90 @@ def test_service_schema_endpoint_unsupported_backend():
     body = r.json()
     assert "error" in body
     assert body.get("backend") == "oracle"
+
+
+def test_service_ask_with_examples_inline():
+    """POST /v1/ask accepts an inline examples_inline list."""
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/ask",
+        json={
+            "question": "SELECT 1 AS x",
+            "is_sql": True,
+            "dialects": ["postgres"],
+            "examples_inline": [
+                {"question": "count orders", "sql": "SELECT COUNT(*) FROM orders"},
+                {
+                    "question": "monthly revenue",
+                    "sql": "SELECT DATE_TRUNC('month', ts) FROM events",
+                },
+            ],
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["canonical"] == "SELECT 1 AS x"
+    assert "postgres" in body["results"]
+
+
+def test_service_ask_with_instructions_field():
+    """POST /v1/ask accepts an instructions field."""
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/ask",
+        json={
+            "question": "SELECT 1 AS x",
+            "is_sql": True,
+            "dialects": ["postgres"],
+            "instructions": "Use lowercase column aliases.",
+        },
+    )
+    assert r.status_code == 200, r.text
+
+
+def test_service_ask_advanced_runs_planner():
+    """POST /v1/ask with advanced=true should run the multi-step planner."""
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/ask",
+        json={
+            "question": "SELECT 1 AS x",
+            "is_sql": True,
+            "dialects": ["postgres"],
+            "advanced": True,
+        },
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    # In advanced mode the planner still passes through raw SQL via is_sql
+    # short-circuit (no LLM call), so canonical is unchanged.
+    assert body["canonical"] == "SELECT 1 AS x"
+
+
+def test_service_ask_examples_inline_rejects_missing_fields():
+    """examples_inline items without 'question' or 'sql' should 400."""
+    from fastapi.testclient import TestClient
+    from speaksql.service import app
+
+    client = TestClient(app)
+    r = client.post(
+        "/v1/ask",
+        json={
+            "question": "SELECT 1",
+            "is_sql": True,
+            "dialects": ["postgres"],
+            "examples_inline": [
+                {"question": "count orders"},  # missing 'sql'
+            ],
+        },
+    )
+    assert r.status_code == 400

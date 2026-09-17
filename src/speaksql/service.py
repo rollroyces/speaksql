@@ -41,6 +41,29 @@ class AskRequest(BaseModel):
         default=False,
         description="If true, treat `question` as canonical ANSI SQL.",
     )
+    instructions: str | None = Field(
+        default=None,
+        description=(
+            "Per-source guidance appended to the LLM system prompt "
+            "(e.g. 'always use lowercase aliases')."
+        ),
+    )
+    examples_inline: list[dict[str, str]] | None = Field(
+        default=None,
+        description=(
+            "Inline example-query library. Each item must have 'question' "
+            "and 'sql' fields; top-K by BM25 are injected as few-shot "
+            "examples into the LLM system prompt."
+        ),
+    )
+    advanced: bool = Field(
+        default=False,
+        description=(
+            "Run the multi-step planner (IdentifyTables -> IdentifyColumns "
+            "-> GenerateSQL -> SyntacticValidate -> BusinessValidate). "
+            "Default false = standard single-pass generation."
+        ),
+    )
 
 
 class AskResponse(BaseModel):
@@ -118,7 +141,43 @@ def ask(req: AskRequest) -> AskResponse:
                 status_code=400,
                 detail=f"Unsupported dialect '{d}'. Supported: {sorted(SUPPORTED_DIALECTS)}",
             )
-    canonical = req.question if req.is_sql else nl_to_canonical(req.question)
+
+    # Resolve inline examples into the (question, sql) shape the LLM
+    # layer expects. Validate that each example has the required fields.
+    examples: list[tuple[str, str]] | None = None
+    if req.examples_inline:
+        examples = []
+        for ex in req.examples_inline:
+            q = ex.get("question") or ""
+            sql = ex.get("sql") or ""
+            if not q or not sql:
+                raise HTTPException(
+                    status_code=400,
+                    detail="examples_inline items must have 'question' and 'sql' fields",
+                )
+            examples.append((q, sql))
+
+    if req.is_sql:
+        canonical = req.question
+    elif req.advanced:
+        # Multi-step planner: IdentifyTables -> IdentifyColumns ->
+        # GenerateSQL -> SyntacticValidate -> BusinessValidate, with
+        # self-correction on parse / column-reference errors.
+        from speaksql.planner import run_planner
+
+        result = run_planner(
+            req.question,
+            advanced=True,
+            instructions=req.instructions,
+            examples=examples,
+        )
+        canonical = result.state.canonical_sql or req.question
+    else:
+        canonical = nl_to_canonical(
+            req.question,
+            instructions=req.instructions,
+            examples=examples,
+        )
     try:
         results = transpile(canonical, targets)
     except Exception as e:

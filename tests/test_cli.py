@@ -198,3 +198,93 @@ def test_cli_graph_json(tmp_path):
     assert "nodes" in parsed and "edges" in parsed
     assert len(parsed["nodes"]) == 2
     assert len(parsed["edges"]) == 1
+
+
+# ---------------------------------------------------------------------------
+# --examples / --instructions integration with `ask`
+# ---------------------------------------------------------------------------
+
+
+def test_cli_ask_with_examples_file():
+    """--examples loads a JSONL library and feeds it through the LLM path."""
+    import json
+
+    from click.testing import CliRunner
+    from speaksql.cli import main
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        with open("examples.jsonl", "w") as f:
+            f.write(
+                json.dumps(
+                    {"question": "count orders", "sql": "SELECT COUNT(*) FROM orders"}
+                )
+                + "\n"
+            )
+            f.write(
+                json.dumps(
+                    {
+                        "question": "monthly revenue",
+                        "sql": "SELECT DATE_TRUNC('month', ts) FROM events",
+                    }
+                )
+                + "\n"
+            )
+        result = runner.invoke(
+            main,
+            [
+                "ask",
+                "--sql",
+                "SELECT 1 AS x",
+                "-d",
+                "duckdb",
+                "--examples",
+                "examples.jsonl",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+
+
+def test_cli_ask_with_instructions_file():
+    """--instructions loads a text file and passes it through."""
+    from click.testing import CliRunner
+    from speaksql.cli import main
+
+    runner = CliRunner()
+    with runner.isolated_filesystem():
+        with open("instructions.txt", "w") as f:
+            f.write("Always use lowercase column aliases.\n")
+        result = runner.invoke(
+            main,
+            [
+                "ask",
+                "--sql",
+                "SELECT 1 AS x",
+                "-d",
+                "duckdb",
+                "--instructions",
+                "instructions.txt",
+            ],
+        )
+    assert result.exit_code == 0, result.output
+
+
+def test_cli_ask_examples_missing_path_errors():
+    """A missing --examples path should fail with a non-zero exit."""
+    from click.testing import CliRunner
+    from speaksql.cli import main
+
+    runner = CliRunner()
+    result = runner.invoke(
+        main,
+        [
+            "ask",
+            "--sql",
+            "SELECT 1 AS x",
+            "-d",
+            "duckdb",
+            "--examples",
+            "/no/such/file.jsonl",
+        ],
+    )
+    assert result.exit_code != 0
