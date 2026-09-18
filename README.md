@@ -492,15 +492,15 @@ declares:
 
 ```mermaid
 flowchart TD
-    A[SchemaList<br/>tables + foreign_keys]:::input
-    B{Real FKs<br/>present?}:::decision
+    A["SchemaList<br/>tables + foreign_keys"]:::input
+    B{"Real FKs<br/>present?"}:::decision
     C["Use real FKs<br/>(_build_from_real_fks)"]:::real
     D{"Singular-name<br/>FK pattern?"}:::decision
     E["Add FK edge<br/>orders.user_id → users.id"]:::heuristic
     F{"Same-name<br/>same-type<br/>NOT PK↔PK?"}:::decision
     G["Add candidate edge"]:::heuristic
-    H[Final JoinGraph<br/>nodes + edges]:::output
-    X[Skip —<br/>PK↔PK noise]:::skip
+    H["Final JoinGraph<br/>nodes + edges"]:::output
+    X["Skip —<br/>PK↔PK noise"]:::skip
 
     A --> B
     B -- yes --> C
@@ -685,8 +685,8 @@ inherits from it or becomes a thin shim — callers don't notice.
 ```mermaid
 flowchart TB
     Q["NL question<br/>or canonical SQL"]:::input
-    I1[introspect():<br/>tables + columns]:::core
-    I2[foreign_keys():<br/>FK constraints]:::core
+    I1["introspect():<br/>tables + columns"]:::core
+    I2["foreign_keys():<br/>FK constraints"]:::core
     L["FK-aware planner<br/>(plan_for_question)"]:::plan
     C["Canonical Plan<br/>(dialect-agnostic AST)"]:::plan
     E["SQLGlot transpile<br/>+ vendor_overrides"]:::emit

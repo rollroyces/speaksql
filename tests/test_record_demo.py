@@ -206,16 +206,24 @@ def test_player_assets_present():
 def test_mermaid_blocks_have_valid_bracket_quoting():
     """Each Mermaid block must use GitHub-compatible bracket syntax.
 
-    GitHub's Mermaid parser is strict about unescaped double quotes
-    inside `[...]` shape labels. When the label text contains `<br/>`
-    it gets interpreted as multiple nodes on one line; an unescaped
-    `"` in that text (e.g. `Q["text with \"quoted\" word"]`) trips the
-    parser and breaks the whole diagram.
+    GitHub's Mermaid renderer is strict. Two classes of bugs break
+    parsing:
 
-    The fix: wrap the whole `[...]` label in outer double quotes so
-    the entire string is one token. Every Mermaid block in this file
-    follows that convention; if you add a new one and skip the outer
-    quotes, this test will catch it.
+    1. **Unescaped `"` inside `[...]` labels** when the label also
+       contains `<br/>`. GitHub reads `[Question<br/>` as one node,
+       then chokes on the unescaped `"`.
+
+    2. **Special Mermaid characters in unquoted labels** — even
+       without a `"`, characters like `:`, `+`, `(`, `)`, `&`, `<`, `>`
+       inside `[...]` can be misinterpreted by the parser (e.g. `:`
+       is used to separate label from class, `+` is used to merge
+       nodes).
+
+    The safe form for any non-trivial label is the **outer-quote
+    wrap**: `Q["label text"]`. Every Mermaid block in this file
+    follows that convention for any label containing `<br/>`, special
+    characters, or whitespace; if you add a new one that doesn't,
+    this test will catch it.
     """
     import re
 
@@ -223,22 +231,40 @@ def test_mermaid_blocks_have_valid_bracket_quoting():
     blocks = re.findall(r"```mermaid\n(.*?)```", readme, re.DOTALL)
     assert blocks, "expected at least one ```mermaid block in README.md"
 
+    # Characters that need the outer-quote wrap when present in a label.
+    # The "+" check is conservative — even with outer quotes it works,
+    # but without quotes "+" can be parsed as a graph-merge operator.
+    TRIGGER_CHARS = set('"()[]<>:+&|')
+
     issues: list[str] = []
     for block_idx, block in enumerate(blocks, 1):
-        for line in block.splitlines():
+        for line_idx, line in enumerate(block.splitlines(), 1):
             # Match a node declaration: IDENTIFIER[content] possibly
-            # followed by `:::class` and optionally edge text.
-            m = re.match(r"\s*[A-Za-z0-9_]+\[([^\]]*)\]", line)
+            # followed by `:::class`. We stop at the first `]` so
+            # `:::class` and edge arrows after don't confuse us.
+            m = re.match(r"^\s*([A-Za-z0-9_]+)\[([^\]]*)\]", line)
             if not m:
                 continue
-            label = m.group(1)
-            # If the label has any " in it, the outer [ must start with
-            # " so the whole label is one quoted token.
-            if '"' in label and not label.startswith('"'):
+            label = m.group(2)
+            if not label:
+                continue
+            # If the label is outer-quoted, the whole thing is one
+            # string token — anything inside is fine.
+            if label.startswith('"') and label.endswith('"'):
+                continue
+            # Otherwise, the label should not contain any of the
+            # special characters that confuse GitHub's parser.
+            bad = [c for c in label if c in TRIGGER_CHARS]
+            # `*` is used for asterisks in our bold-syntax wrappers
+            # but GitHub strips `**...**` from inside Mermaid labels.
+            # Skip `*` as a trigger.
+            bad = [c for c in bad if c != "*"]
+            if bad:
                 issues.append(
-                    f"Block {block_idx}, line: {line.strip()!r}\n"
-                    f"  label contains '\"' but is not wrapped in outer "
-                    f"double quotes — wrap the entire [...] in \"...\"."
+                    f"Block {block_idx} line {line_idx}: {line.strip()!r}\n"
+                    f"  label contains {[chr(ord(c)) for c in set(bad)]!r} "
+                    f"but is not wrapped in outer double quotes — wrap "
+                    f"the entire [...] in \"...\"."
                 )
 
     assert not issues, (
