@@ -1,9 +1,29 @@
 name: Deploy docs to GitHub Pages
 
+# This workflow is opt-in. It only runs when the `PAGES_ENABLED`
+# repository variable is set to `'true'`. The default is off because
+# GitHub Pages needs to be enabled once in the repo's Settings panel,
+# which we cannot do programmatically from a workflow file.
+#
+# To enable:
+#   1. Repo Settings → Pages → Source: "GitHub Actions" → Save
+#   2. Repo Settings → Secrets and variables → Actions → Variables →
+#      New repository variable: name = PAGES_ENABLED, value = true
+#   3. Push to main (or trigger via workflow_dispatch)
+#
+# Until step 2 is done, this workflow silently no-ops so the CI tab
+# stays green. Once PAGES_ENABLED is set, subsequent pushes publish
+# docs/ to GitHub Pages automatically.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      force:
+        description: "Force deploy even if PAGES_ENABLED != true"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -15,16 +35,33 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  should-deploy:
+    name: Check whether Pages is enabled
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+    steps:
+      - id: check
+        run: |
+          if [ "${{ vars.PAGES_ENABLED }}" = "true" ] || \
+             [ "${{ github.event.inputs.force }}" = "true" ]; then
+            echo "deploy=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::PAGES_ENABLED not set; skipping Pages deploy. Set the repository variable to enable."
+            echo "deploy=false" >> "$GITHUB_OUTPUT"
+          fi
+
   deploy:
     name: Deploy docs/
     runs-on: ubuntu-latest
+    needs: should-deploy
+    if: needs.should-deploy.outputs.deploy == 'true'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
         with:
-          # Pull full history so the demo recordings are present.
           fetch-depth: 0
 
       - name: Set up Python 3.12
