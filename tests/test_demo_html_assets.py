@@ -33,9 +33,7 @@ class _AssetHarvester(HTMLParser):
             if not value:
                 continue
             # Skip non-local references
-            if re.match(r"^(https?:)?//", value) or value.startswith("data:"):
-                continue
-            if value.startswith("#") or value.startswith("mailto:"):
+            if re.match(r"^(https?:)?//", value) or value.startswith(("data:", "#", "mailto:")):
                 continue
             self.local_refs.append(value)
 

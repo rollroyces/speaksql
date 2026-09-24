@@ -15,9 +15,8 @@ import pytest
 pytest.importorskip("fastapi")
 pytest.importorskip("uvicorn")
 
-from fastapi.testclient import TestClient  # noqa: E402
-
-from speaksql.service import app  # noqa: E402
+from fastapi.testclient import TestClient
+from speaksql.service import app
 
 EXAMPLES_DIR = Path(__file__).resolve().parent.parent / "examples"
 

@@ -32,7 +32,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import sqlglot
-from sqlglot import errors as _sqlglot_errors  # noqa: F401  (re-export via module)
+from sqlglot import errors as _sqlglot_errors
 
 # Allow running from repo root without installing.
 _ROOT = Path(__file__).resolve().parents[2]
@@ -85,7 +85,7 @@ def evaluate(cases: Iterable[Case]) -> list[Result]:
     for c in cases:
         try:
             actual = nl_to_canonical(c.input)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — eval records all failures as Result rows
             results.append(Result(c, "", False, f"exception: {e}"))
             continue
         passed, note = ast_equal(c.expected, actual)
