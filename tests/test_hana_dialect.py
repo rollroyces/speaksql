@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 import speaksql
 import sqlglot
 from speaksql.dialects.hana import Hana, _register
@@ -88,3 +89,54 @@ def test_hana_does_not_break_other_dialects():
     _register()
     # Postgres output should be unchanged
     assert speaksql.transpile(canonical, targets=("postgres",))["postgres"] == expected_postgres
+
+
+def test_hana_series_generate_date_parses():
+    """SERIES_GENERATE_DATE is HANA-specific; verify parse + emit round-trip.
+
+    HANA inherits Postgres parsing — `SERIES_GENERATE_DATE` falls through
+    to the anonymous-function path and survives a parse→emit round-trip.
+    """
+    sql = (
+        "SELECT GENERATED_PERIOD_START, GENERATED_PERIOD_END "
+        "FROM SERIES_GENERATE_DATE('2026-01-01', '2026-12-31', 'MONTH', 1)"
+    )
+    _register()
+    ast = sqlglot.parse_one(sql, dialect="hana")
+    out = ast.sql(dialect="hana")
+    assert "SERIES_GENERATE_DATE" in out.upper()
+    assert "2026-01-01" in out
+    assert "2026-12-31" in out
+
+
+def test_hana_add_days_and_seconds_parse():
+    """ADD_DAYS / ADD_SECONDS are HANA date arithmetic; must round-trip verbatim."""
+    for fn, arg in [("ADD_DAYS", "7"), ("ADD_SECONDS", "60")]:
+        sql = f"SELECT {fn}('2026-01-01', {arg}) AS d FROM t"
+        _register()
+        ast = sqlglot.parse_one(sql, dialect="hana")
+        out = ast.sql(dialect="hana")
+        assert fn in out.upper(), f"lost {fn} in round-trip"
+
+
+def test_hana_transpile_then_reparse_yields_same_ast():
+    """Full canonical→HANA→parse→emit round-trip must preserve column refs."""
+    canonical = (
+        "SELECT id, name, created_at "
+        "FROM users "
+        "WHERE created_at > DATE '2026-01-01' "
+        "ORDER BY created_at"
+    )
+    hana_sql = speaksql.transpile(canonical, targets=("hana",))["hana"]
+    _register()
+    reparsed = sqlglot.parse_one(hana_sql, dialect="hana")
+    out_again = reparsed.sql(dialect="hana")
+    assert " ".join(out_again.split()) == " ".join(hana_sql.split())
+
+
+def test_hana_rejects_malformed_sql():
+    """HANA dialect must surface parse errors, not silently emit garbage."""
+    from sqlglot.errors import ParseError
+    _register()
+    with pytest.raises(ParseError):
+        sqlglot.parse_one("SELECT FROM WHERE", dialect="hana")
