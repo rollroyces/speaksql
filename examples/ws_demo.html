@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SpeakSQL — WebSocket Streaming Demo</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body {
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      max-width: 920px; margin: 2rem auto; padding: 0 1rem;
+      background: #fafafa; color: #111;
+    }
+    @media (prefers-color-scheme: dark) {
+      body { background: #0e0e10; color: #e6e6e6; }
+    }
+    h1 { margin-bottom: .25rem; }
+    p.lead { color: #666; margin-top: 0; }
+    form { margin: 1rem 0; }
+    input[type=text] {
+      width: 70%; padding: .5rem; font-family: inherit; font-size: 1rem;
+    }
+    button { padding: .5rem 1rem; font-size: 1rem; cursor: pointer; }
+    pre {
+      background: #111; color: #d6ffea; padding: 1rem; border-radius: 6px;
+      white-space: pre-wrap; word-break: break-word; overflow-x: auto;
+      min-height: 3rem;
+    }
+    .dialect-block {
+      margin: 1rem 0; padding: 1rem; border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+    .dialect-name {
+      font-weight: bold; color: #4a7; margin-bottom: .5rem;
+    }
+    .status { font-size: .9rem; color: #888; margin-top: .5rem; }
+    .status.error { color: #c33; }
+    @media (prefers-color-scheme: dark) {
+      pre { background: #000; }
+      .dialect-block { border-color: #333; }
+    }
+  </style>
+</head>
+<body>
+  <h1>SpeakSQL — WebSocket Streaming Demo</h1>
+  <p class="lead">Start the service with
+    <code>uvicorn speaksql.service:app --port 8765</code>,
+    type a question or canonical SQL below, and watch the LLM tokens
+    stream live as they arrive from <code>/v1/ask</code>.</p>
+
+  <form id="form">
+    <input id="q" type="text"
+           placeholder='e.g. SELECT 1 AS x — or: monthly amount by country'
+           autofocus />
+    <button type="submit">Ask</button>
+  </form>
+  <div class="status" id="status">&nbsp;</div>
+
+  <h2>Canonical SQL (streamed)</h2>
+  <pre id="canonical">(no question yet)</pre>
+
+  <h2>Per-dialect transpiled output</h2>
+  <div id="dialects"></div>
+
+  <script>
+    const form = document.getElementById('form');
+    const qEl = document.getElementById('q');
+    const canonEl = document.getElementById('canonical');
+    const dialectsEl = document.getElementById('dialects');
+    const statusEl = document.getElementById('status');
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const question = qEl.value.trim();
+      if (!question) return;
+
+      canonEl.textContent = '';
+      dialectsEl.innerHTML = '';
+      statusEl.textContent = 'connecting…';
+      statusEl.classList.remove('error');
+
+      // Detect canonical SQL — if so, don't bother with LLM token streaming
+      const isSql = /^\s*(SELECT|INSERT|UPDATE|DELETE|MERGE|WITH)\b/i.test(question);
+
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const ws = new WebSocket(proto + '//' + location.host + '/v1/ask');
+
+      ws.onerror = () => {
+        statusEl.textContent = 'WebSocket error (is the service running on port ' + location.port + '?)';
+        statusEl.classList.add('error');
+      };
+      ws.onopen = () => {
+        statusEl.textContent = 'streaming…';
+        ws.send(JSON.stringify({
+          question: question,
+          dialects: ['postgres', 'bigquery', 'duckdb', 'snowflake'],
+          is_sql: isSql,
+        }));
+      };
+      ws.onmessage = (ev) => {
+        const frame = JSON.parse(ev.data);
+        const t = frame.type;
+        if (t === 'llm_token') {
+          canonEl.textContent += frame.delta || '';
+        } else if (t === 'canonical') {
+          canonEl.textContent = frame.sql || '';
+        } else if (t === 'transpile') {
+          const block = document.createElement('div');
+          block.className = 'dialect-block';
+          const name = document.createElement('div');
+          name.className = 'dialect-name';
+          name.textContent = frame.dialect;
+          const code = document.createElement('pre');
+          code.textContent = frame.sql;
+          block.appendChild(name);
+          block.appendChild(code);
+          dialectsEl.appendChild(block);
+        } else if (t === 'done') {
+          statusEl.textContent = 'done';
+          ws.close();
+        } else if (t === 'error') {
+          canonEl.textContent = 'Error: ' + (frame.message || '?');
+          statusEl.textContent = 'error';
+          statusEl.classList.add('error');
+          ws.close();
+        }
+      };
+    });
+  </script>
+</body>
+</html>

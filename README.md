@@ -12,7 +12,7 @@ instructions, and a multi-step state-machine planner.
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/rollroyces/speaksql)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 [![Built on SQLGlot](https://img.shields.io/badge/powered%20by-SQLGlot-orange)](https://github.com/tobymao/sqlglot)
-[![278 tests](https://img.shields.io/badge/tests-278%20passing-brightgreen)](https://github.com/rollroyces/speaksql)
+[![289 tests](https://img.shields.io/badge/tests-289%20passing-brightgreen)](https://github.com/rollroyces/speaksql)
 
 ---
 
@@ -78,6 +78,22 @@ open docs/demo.html       # macOS
 # Regenerate the recordings from scratch
 uv run python scripts/record_demo.py /tmp/demo.cast demo
 ```
+
+### Streaming WebSocket demo
+
+The `ws_ask` endpoint streams the LLM's response token-by-token over
+WebSocket (`{"type":"llm_token","delta":"..."}` frames, then
+`{"type":"canonical","sql":"..."}`, then one `{"type":"transpile",...}`
+per dialect, finally `{"type":"done"}`).
+
+Two example clients ship in `examples/`:
+
+- **`examples/ws_client.py`** — Python client using `websockets`; works
+  from any terminal.
+- **`examples/ws_demo.html`** — single-page HTML demo. Open it in a
+  browser after starting the service
+  (`uvicorn speaksql.service:app --port 8765`), type a question,
+  watch tokens stream live into the page.
 
 ---
 
@@ -791,7 +807,7 @@ cd speaksql
 uv sync --extra dev --extra service --extra duckdb   # fast path
 # or: uv sync --all-extras                            # every backend driver
 
-uv run pytest            # 278 tests across 27 files
+uv run pytest            # 289 tests across 29 files
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -821,13 +837,16 @@ speaksql/
 │   │   │                          #   sqlite, duckdb, postgres, mysql, mssql,
 │   │   │                          #   snowflake, bigquery, spark
 │   │   └── dialects/              # vendor dialects (hana.py)
-│   ├── tests/                     # 278 tests across 27 files
+│   ├── tests/                     # 289 tests across 29 files
 │   ├── examples/
 │   │   ├── demo_all_dialects.py
 │   │   ├── example_library.jsonl  # 6 hand-curated few-shot examples
-│   │   └── llm_eval/              # eval harness + eval_set.jsonl
+│   │   ├── llm_eval/              # eval harness + eval_set.jsonl
+│   │   ├── ws_client.py           # Python WebSocket streaming client
+│   │   └── ws_demo.html           # Browser WebSocket demo page
 │   ├── scripts/                   # record_demo.py — regenerates docs/*.cast
 │   ├── docs/                      # demo.html + demo.cast recordings + player assets
+│   ├── CONTRIBUTING.md            # setup, test, lint, add-dialect, release
 └── .github/workflows/         # CI: Python 3.11/3.12/3.13 + OpenJDK 17 for live Spark
 ```
 
@@ -886,5 +905,5 @@ for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 278 tests green · Inspired by Microsoft Fabric NL2SQL</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 289 tests green · Inspired by Microsoft Fabric NL2SQL</sub>
 </p>
