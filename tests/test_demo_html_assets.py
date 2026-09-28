@@ -101,6 +101,41 @@ def test_svg_visuals_are_valid_xml(svg_name):
         pytest.fail(f"{p} is malformed SVG: {e}")
 
 
+@pytest.mark.parametrize(
+    "svg_name",
+    [
+        "feature_poster.svg",
+        "ws_demo_mockup.svg",
+        "join_graph_inline.svg",
+        "demo.svg",
+        "join_graph_example/join_graph.svg",
+    ],
+)
+def test_svg_visuals_have_explicit_dimensions(svg_name):
+    """Every SVG must declare width + height on the root <svg> element.
+
+    GitHub's HTML sanitizer and image proxy sometimes fail to size
+    viewBox-only SVGs correctly in <img> tags, leading to broken-image
+    placeholders. Always ship with explicit width/height attributes.
+    """
+    import re
+
+    p = DOCS_DIR / svg_name
+    if not p.exists():
+        pytest.skip(f"{p} not present")
+    text = p.read_text()
+    # The very first <svg ...> opening tag must have both width and height.
+    m = re.search(r"<svg\b[^>]*>", text)
+    assert m, f"{p} has no <svg> root tag"
+    tag = m.group(0)
+    assert re.search(r'\bwidth\s*=\s*"[^"]+"', tag) or re.search(
+        r"\bwidth\s*=\s*'[^']+'", tag
+    ), f"{p} root <svg> missing explicit width attribute"
+    assert re.search(r'\bheight\s*=\s*"[^"]+"', tag) or re.search(
+        r"\bheight\s*=\s*'[^']+'", tag
+    ), f"{p} root <svg> missing explicit height attribute"
+
+
 def test_demo_html_itself_exists():
     """Sanity: the page must be committed to the repo."""
     assert DEMO_HTML.exists(), f"missing {DEMO_HTML}"

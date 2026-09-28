@@ -4,7 +4,7 @@
   types a question. Captures the visual style of the live page so the
   demo.html tour can show it without needing to run the service.
 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 720" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+<svg xmlns="http://www.w3.org/2000/svg" width="920" height="720" viewBox="0 0 920 720" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
   <!-- Background -->
   <rect width="920" height="720" fill="#0e0e10"/>
 

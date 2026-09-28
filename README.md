@@ -539,11 +539,9 @@ shipments, reviews) — rendered from the FK constraints the database
 declares:
 
 <p align="center">
-  <a href="docs/join_graph_example/index.html">
-    <img src="docs/join_graph_example/join_graph.svg"
-         alt="SpeakSQL JOIN graph for an ecommerce schema"
-         width="800">
-  </a>
+  <img src="docs/join_graph_example/join_graph.svg"
+       alt="SpeakSQL JOIN graph for an ecommerce schema"
+       width="800">
 </p>
 
 ```mermaid
