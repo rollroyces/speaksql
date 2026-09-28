@@ -28,7 +28,10 @@ class _AssetHarvester(HTMLParser):
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attr_map = dict(attrs)
-        for attr in ("href", "src"):
+        # Standard link/script refs
+        attrs_to_check = ("href", "src", "data")
+        # <object data="..."> embeds SVGs and external resources; same check.
+        for attr in attrs_to_check:
             value = attr_map.get(attr)
             if not value:
                 continue
@@ -73,6 +76,29 @@ def test_demo_html_static_dir_inventory():
     assert static.exists(), "docs/static/ missing"
     for name in ("asciinema-player.min.js", "asciinema-player.css"):
         assert (static / name).exists(), f"missing docs/static/{name}"
+
+
+@pytest.mark.parametrize(
+    "svg_name",
+    [
+        "feature_poster.svg",
+        "ws_demo_mockup.svg",
+        "join_graph_inline.svg",
+        "demo.svg",
+        "join_graph_example/join_graph.svg",
+    ],
+)
+def test_svg_visuals_are_valid_xml(svg_name):
+    """Every SVG referenced from demo.html must be well-formed XML."""
+    import xml.etree.ElementTree as ET
+
+    p = DOCS_DIR / svg_name
+    if not p.exists():
+        pytest.skip(f"{p} not present")
+    try:
+        ET.parse(p)
+    except ET.ParseError as e:
+        pytest.fail(f"{p} is malformed SVG: {e}")
 
 
 def test_demo_html_itself_exists():

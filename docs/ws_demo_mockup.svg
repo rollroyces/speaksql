@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Hand-painted mockup of what examples/ws_demo.html renders when the user
+  types a question. Captures the visual style of the live page so the
+  demo.html tour can show it without needing to run the service.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 720" font-family="ui-monospace, SFMono-Regular, Menlo, monospace">
+  <!-- Background -->
+  <rect width="920" height="720" fill="#0e0e10"/>
+
+  <!-- Title -->
+  <text x="460" y="44" text-anchor="middle" font-size="22" font-weight="700" fill="#e8eef7">SpeakSQL — WebSocket Streaming Demo</text>
+  <text x="460" y="68" text-anchor="middle" font-size="12" fill="#8aa0c0">Start the service, type a question, watch LLM tokens stream live into the page</text>
+
+  <!-- Form bar -->
+  <rect x="60" y="100" width="800" height="44" rx="6" fill="#1c2540" stroke="#3b4870" stroke-width="1"/>
+  <text x="76" y="128" font-size="14" fill="#d6ffea">monthly amount by country</text>
+  <rect x="700" y="110" width="140" height="24" rx="4" fill="#6ad4ff"/>
+  <text x="770" y="127" text-anchor="middle" font-size="13" font-weight="600" fill="#0e0e10">Ask</text>
+
+  <!-- Status line -->
+  <text x="60" y="170" font-size="11" fill="#8aa0c0">streaming…</text>
+
+  <!-- Canonical SQL header -->
+  <text x="60" y="210" font-size="14" font-weight="700" fill="#6ad4ff">Canonical SQL (streamed)</text>
+  <rect x="60" y="222" width="800" height="98" rx="6" fill="#000000" stroke="#1c2540"/>
+  <text x="76" y="248" font-size="12" fill="#d6ffea">SELECT DATE_TRUNC('month', created_at) AS m,</text>
+  <text x="76" y="266" font-size="12" fill="#d6ffea">       country, SUM(amount) AS total</text>
+  <text x="76" y="284" font-size="12" fill="#d6ffea">FROM events</text>
+  <text x="76" y="302" font-size="12" fill="#d6ffea">GROUP BY m, country</text>
+  <!-- Streaming cursor -->
+  <rect x="180" y="290" width="2" height="16" fill="#6ad4ff">
+    <animate attributeName="opacity" values="1;0;1" dur="1s" repeatCount="indefinite"/>
+  </rect>
+
+  <!-- Per-dialect header -->
+  <text x="60" y="354" font-size="14" font-weight="700" fill="#6ad4ff">Per-dialect transpiled output</text>
+
+  <!-- Postgres block -->
+  <rect x="60" y="368" width="380" height="148" rx="6" fill="#101422" stroke="#3b4870"/>
+  <text x="76" y="392" font-size="13" font-weight="700" fill="#4ade80">postgres</text>
+  <line x1="60" y1="404" x2="440" y2="404" stroke="#1c2540"/>
+  <text x="76" y="424" font-size="11" fill="#d6ffea">SELECT</text>
+  <text x="76" y="442" font-size="11" fill="#d6ffea">  DATE_TRUNC('MONTH', created_at) AS m,</text>
+  <text x="76" y="460" font-size="11" fill="#d6ffea">  country,</text>
+  <text x="76" y="478" font-size="11" fill="#d6ffea">  SUM(amount) AS total</text>
+  <text x="76" y="496" font-size="11" fill="#d6ffea">FROM events</text>
+  <text x="76" y="514" font-size="11" fill="#d6ffea">GROUP BY m, country</text>
+
+  <!-- BigQuery block -->
+  <rect x="460" y="368" width="400" height="148" rx="6" fill="#101422" stroke="#3b4870"/>
+  <text x="476" y="392" font-size="13" font-weight="700" fill="#4ade80">bigquery</text>
+  <line x1="460" y1="404" x2="860" y2="404" stroke="#1c2540"/>
+  <text x="476" y="424" font-size="11" fill="#d6ffea">SELECT</text>
+  <text x="476" y="442" font-size="11" fill="#d6ffea">  DATE_TRUNC(created_at, MONTH) AS m,</text>
+  <text x="476" y="460" font-size="11" fill="#d6ffea">  country,</text>
+  <text x="476" y="478" font-size="11" fill="#d6ffea">  SUM(amount) AS total</text>
+  <text x="476" y="496" font-size="11" fill="#d6ffea">FROM events</text>
+  <text x="476" y="514" font-size="11" fill="#d6ffea">GROUP BY m, country</text>
+
+  <!-- DuckDB block -->
+  <rect x="60" y="530" width="380" height="148" rx="6" fill="#101422" stroke="#3b4870"/>
+  <text x="76" y="554" font-size="13" font-weight="700" fill="#4ade80">duckdb</text>
+  <line x1="60" y1="566" x2="440" y2="566" stroke="#1c2540"/>
+  <text x="76" y="586" font-size="11" fill="#d6ffea">SELECT</text>
+  <text x="76" y="604" font-size="11" fill="#d6ffea">  DATE_TRUNC('MONTH', created_at) AS m,</text>
+  <text x="76" y="622" font-size="11" fill="#d6ffea">  country,</text>
+  <text x="76" y="640" font-size="11" fill="#d6ffea">  SUM(amount) AS total</text>
+  <text x="76" y="658" font-size="11" fill="#d6ffea">FROM events</text>
+  <text x="76" y="676" font-size="11" fill="#d6ffea">GROUP BY m, country</text>
+
+  <!-- Snowflake block (animated: appears after the others) -->
+  <rect x="460" y="530" width="400" height="148" rx="6" fill="#101422" stroke="#3b4870" opacity="0.45">
+    <animate attributeName="opacity" values="0.45;1;0.45" dur="3s" repeatCount="indefinite"/>
+  </rect>
+  <text x="476" y="554" font-size="13" font-weight="700" fill="#4ade80">snowflake</text>
+  <line x1="460" y1="566" x2="860" y2="566" stroke="#1c2540"/>
+  <text x="476" y="586" font-size="11" fill="#d6ffea">SELECT</text>
+  <text x="476" y="604" font-size="11" fill="#d6ffea">  DATE_TRUNC('MONTH', created_at) AS m,</text>
+  <text x="476" y="622" font-size="11" fill="#d6ffea">  country,</text>
+  <text x="476" y="640" font-size="11" fill="#d6ffea">  SUM(amount) AS total</text>
+  <text x="476" y="658" font-size="11" fill="#d6ffea">FROM events</text>
+  <text x="476" y="676" font-size="11" fill="#d6ffea">GROUP BY m, country</text>
+
+  <!-- Footer -->
+  <text x="460" y="704" text-anchor="middle" font-size="10" fill="#3b4870">examples/ws_demo.html · opens in any browser · needs service on port 8765</text>
+</svg>

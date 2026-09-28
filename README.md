@@ -12,7 +12,7 @@ instructions, and a multi-step state-machine planner.
 [![Python](https://img.shields.io/badge/python-3.11%20%7C%203.12%20%7C%203.13-blue)](https://github.com/rollroyces/speaksql)
 [![License](https://img.shields.io/badge/license-AGPL--3.0--or--later-blue)](LICENSE)
 [![Built on SQLGlot](https://img.shields.io/badge/powered%20by-SQLGlot-orange)](https://github.com/tobymao/sqlglot)
-[![292 tests](https://img.shields.io/badge/tests-292%20passing-brightgreen)](https://github.com/rollroyces/speaksql)
+[![297 tests](https://img.shields.io/badge/tests-297%20passing-brightgreen)](https://github.com/rollroyces/speaksql)
 
 ---
 
@@ -68,7 +68,7 @@ page plays them inline (asciinema-player.js is vendored — no CDN).
 
 <div align="center">
 
-![SpeakSQL — NL → 3 dialects](docs/demo.svg)
+![SpeakSQL — at a glance](docs/feature_poster.svg)
 
 </div>
 
@@ -827,7 +827,7 @@ cd speaksql
 uv sync --extra dev --extra service --extra duckdb   # fast path
 # or: uv sync --all-extras                            # every backend driver
 
-uv run pytest            # 292 tests across 29 files
+uv run pytest            # 297 tests across 29 files
 uv run ruff check src tests
 uv run python examples/demo_all_dialects.py
 PYTHONPATH=src python examples/llm_eval/run.py   # 7/7 cases
@@ -862,7 +862,7 @@ speaksql/
 │   │   ├── bigquery_backend.py
 │   │   └── spark_backend.py        # PySpark (JVM required)
 │   └── dialects/              # vendor dialects (hana.py — local Postgres subclass)
-├── tests/                     # 292 tests across 29 files
+├── tests/                     # 297 tests across 29 files
 ├── examples/
 │   ├── demo_all_dialects.py
 │   ├── example_library.jsonl  # 6 hand-curated few-shot examples
@@ -931,5 +931,5 @@ for terms.
 ---
 
 <p align="center">
-  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 292 tests green · Inspired by Microsoft Fabric NL2SQL</sub>
+  <sub>Built with SQLGlot · Tested on Python 3.11, 3.12, 3.13 · 297 tests green · Inspired by Microsoft Fabric NL2SQL</sub>
 </p>

@@ -12,6 +12,7 @@
       --muted: #8aa0c0;
       --accent: #6ad4ff;
       --border: #1c2540;
+      --card: #101422;
     }
     body {
       margin: 0;
@@ -23,30 +24,33 @@
       line-height: 1.5;
     }
     main {
-      max-width: 880px;
+      max-width: 1080px;
       margin: 0 auto;
     }
     header h1 {
       margin: 0 0 0.25rem;
-      font-size: 1.8rem;
+      font-size: 2.2rem;
+      background: linear-gradient(90deg, #6ad4ff, #a78bfa);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
     }
     header p {
-      margin: 0 0 2rem;
+      margin: 0 0 1rem;
       color: var(--muted);
     }
     h2 {
       margin: 2.5rem 0 0.5rem;
-      font-size: 1.2rem;
+      font-size: 1.3rem;
       color: var(--accent);
     }
-    p {
-      margin: 0.5rem 0 0.75rem;
-    }
+    p { margin: 0.5rem 0 0.75rem; }
     .player {
       border: 1px solid var(--border);
       border-radius: 8px;
       overflow: hidden;
       margin-bottom: 0.5rem;
+      background: #000;
     }
     .meta {
       font-size: 0.85rem;
@@ -59,83 +63,182 @@
       padding: 0.05em 0.35em;
       border-radius: 4px;
     }
+    .visual {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      background: var(--card);
+      margin-bottom: 0.5rem;
+    }
+    .visual object {
+      max-width: 100%;
+      width: 100%;
+      height: auto;
+      display: block;
+    }
     footer {
       margin-top: 3rem;
       font-size: 0.85rem;
       color: var(--muted);
       text-align: center;
     }
-    a {
-      color: var(--accent);
+    a { color: var(--accent); }
+    .toc {
+      display: flex; flex-wrap: wrap; gap: 0.5rem;
+      margin: 1rem 0 2rem;
+      padding: 0.75rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.9rem;
     }
+    .toc a {
+      color: var(--muted);
+      text-decoration: none;
+      padding: 0.2rem 0.6rem;
+      border-radius: 4px;
+      border: 1px solid transparent;
+    }
+    .toc a:hover {
+      color: var(--accent);
+      border-color: var(--accent);
+    }
+    .tag {
+      display: inline-block;
+      font-size: 0.7rem;
+      padding: 0.15rem 0.5rem;
+      border-radius: 3px;
+      background: var(--accent);
+      color: var(--bg);
+      font-weight: 600;
+      margin-left: 0.5rem;
+      vertical-align: middle;
+    }
+    .tag.term { background: #4ade80; }
+    .tag.visual { background: #a78bfa; }
   </style>
 </head>
 <body>
   <main>
     <header>
       <h1>SpeakSQL — interactive demos</h1>
-      <p>Real captured terminal sessions, replayed in-browser. Press play
-        to watch; use <code>space</code> to pause, <code>f</code> for
-        fullscreen, and drag to seek.</p>
+      <p>A mixed tour: real captured terminal sessions <span class="tag term">TERMINAL</span>
+         interleaved with rendered visuals <span class="tag visual">VISUAL</span>
+         from the actual product surfaces (JOIN graph HTML, WS streaming page,
+         feature poster). Press play, click into a frame, or scroll.</p>
     </header>
 
-    <section>
-      <h2>1. NL → 3 dialects in one shot</h2>
-      <p>A plain-English question, fanned out into Postgres, BigQuery, and
-        DuckDB in a single CLI call.</p>
+    <nav class="toc">
+      <strong style="color: var(--accent); margin-right: 0.5rem;">Jump:</strong>
+      <a href="#poster">Feature poster</a>
+      <a href="#hero">NL → 3 dialects</a>
+      <a href="#graph">JOIN graph</a>
+      <a href="#ws">WS streaming</a>
+      <a href="#format">Format</a>
+      <a href="#repl">REPL</a>
+      <a href="#diff">Diff</a>
+      <a href="#vendor">Vendor fix</a>
+    </nav>
+
+    <!-- ============ SECTION 1: Feature poster (visual) ============ -->
+    <section id="poster">
+      <h2>1. The product at a glance <span class="tag visual">VISUAL</span></h2>
+      <p>Three primary surfaces — CLI, JOIN graph, WS streaming — and the
+        canonical-to-9-dialects fan-out, all in one static image. Rendered
+        as SVG; the same composition ships as <code>docs/feature_poster.svg</code>.</p>
+      <div class="visual">
+        <object type="image/svg+xml" data="feature_poster.svg"
+                aria-label="SpeakSQL feature poster"></object>
+      </div>
+      <p class="meta">Static SVG · 1200×720 · renders identically in any browser.</p>
+    </section>
+
+    <!-- ============ SECTION 2: NL → 3 dialects (terminal) ============ -->
+    <section id="hero">
+      <h2>2. NL → 3 dialects in one shot <span class="tag term">TERMINAL</span></h2>
+      <p>The headline pitch: plain English, three dialect outputs in one CLI call.
+        Captured from a real session.</p>
       <div class="player">
         <asciinema-player src="demo.cast" autoplay loop speed="1.5"
             poster="data:text/plain,SpeakSQL" cols="100" rows="28"></asciinema-player>
       </div>
-      <p class="meta"><code>docs/demo.cast</code> · 128 frames · ~1.6s</p>
+      <p class="meta"><code>docs/demo.cast</code> · ~120 frames · ~2.1s</p>
     </section>
 
-    <section>
-      <h2>2. <code>speaksql format</code> — canonicalize &amp; cross-dialect</h2>
+    <!-- ============ SECTION 3: JOIN graph (visual) ============ -->
+    <section id="graph">
+      <h2>3. JOIN graph — from a SQLite DB <span class="tag visual">VISUAL</span></h2>
+      <p>Run <code>speaksql graph sales.sqlite --html ./graph.html</code> and you
+        get a real, interactive HTML page with an embedded SVG diagram and a
+        column-listing sidebar. This is the actual rendered output for the
+        <code>graph</code> command's HTML mode:</p>
+      <div class="visual">
+        <object type="image/svg+xml" data="join_graph_inline.svg"
+                aria-label="JOIN graph SVG extracted from the graph CLI output"></object>
+      </div>
+      <p>The same SVG is also embedded in <code>docs/join_graph_demo.html</code>
+        with a column-listing sidebar — open it directly to interact.</p>
+      <p class="meta">SVG extracted from <code>speaksql graph</code> HTML output · real CLI render.</p>
+    </section>
+
+    <!-- ============ SECTION 4: WS streaming (visual) ============ -->
+    <section id="ws">
+      <h2>4. WebSocket streaming — live in the browser <span class="tag visual">VISUAL</span></h2>
+      <p>The <code>/v1/ask</code> WS endpoint streams LLM tokens live into a
+        page. <code>examples/ws_demo.html</code> is the actual interactive
+        surface; here's what it looks like with a question in flight:</p>
+      <div class="visual">
+        <object type="image/svg+xml" data="ws_demo_mockup.svg"
+                aria-label="Mockup of ws_demo.html with a streaming query"></object>
+      </div>
+      <p>The same flow from the Python client side (terminal):</p>
+      <div class="player">
+        <asciinema-player src="demo.cast" autoplay loop speed="1.5"
+            cols="100" rows="28"></asciinema-player>
+      </div>
+      <p class="meta">Mockup + actual terminal capture · the WS frame protocol is
+        documented in the README.</p>
+    </section>
+
+    <!-- ============ SECTION 5: Format (terminal) ============ -->
+    <section id="format">
+      <h2>5. <code>speaksql format</code> — canonicalize & cross-dialect <span class="tag term">TERMINAL</span></h2>
       <p>Three flavors: compact (single-line), pretty (multi-line), and
-        DuckDB → Snowflake conversion.</p>
+        DuckDB → Snowflake conversion. No LLM involved — pure SQLGlot.</p>
       <div class="player">
         <asciinema-player src="demo.format.cast" autoplay loop speed="1.5"
             cols="100" rows="28"></asciinema-player>
       </div>
-      <p class="meta"><code>docs/demo.format.cast</code> · 220 frames · ~3.0s</p>
+      <p class="meta"><code>docs/demo.format.cast</code> · ~180 frames · ~3.5s</p>
     </section>
 
-    <section>
-      <h2>3. <code>speaksql repl</code> — interactive REPL</h2>
-      <p>Type NL or canonical SQL; switch active dialects mid-session
-        with <code>:dialects</code>.</p>
+    <!-- ============ SECTION 6: REPL (terminal) ============ -->
+    <section id="repl">
+      <h2>6. <code>speaksql repl</code> — interactive loop <span class="tag term">TERMINAL</span></h2>
+      <p>Type NL or canonical SQL; switch active dialects mid-session with
+        <code>:dialects</code>.</p>
       <div class="player">
         <asciinema-player src="demo.repl.cast" autoplay loop speed="1.5"
             cols="100" rows="28"></asciinema-player>
       </div>
-      <p class="meta"><code>docs/demo.repl.cast</code> · 147 frames</p>
+      <p class="meta"><code>docs/demo.repl.cast</code> · ~90 frames · ~0.6s</p>
     </section>
 
-    <section>
-      <h2>4. <code>speaksql diff</code> — semantic SQL diff</h2>
-      <p>Same canonical query, two dialect emissions, and a structured
-        list of every difference.</p>
+    <!-- ============ SECTION 7: Diff (terminal) ============ -->
+    <section id="diff">
+      <h2>7. <code>speaksql diff</code> — semantic SQL diff <span class="tag term">TERMINAL</span></h2>
+      <p>Same canonical query, two dialect emissions, structured list of every
+        difference (function rewrites, NULL ordering, sort direction, type aliases).</p>
       <div class="player">
         <asciinema-player src="demo.diff.cast" autoplay loop speed="1.5"
             cols="100" rows="28"></asciinema-player>
       </div>
-      <p class="meta"><code>docs/demo.diff.cast</code> · ~158 frames · ~2.1s</p>
+      <p class="meta"><code>docs/demo.diff.cast</code> · ~160 frames · ~2.1s</p>
     </section>
 
-    <section>
-      <h2>5. <code>speaksql graph</code> — JOIN graph from a SQLite DB</h2>
-      <p>Introspect the schema + declared FKs, emit the join graph as JSON
-        or as an interactive HTML visualization.</p>
-      <div class="player">
-        <asciinema-player src="demo.graph.cast" autoplay loop speed="1.5"
-            cols="100" rows="28"></asciinema-player>
-      </div>
-      <p class="meta"><code>docs/demo.graph.cast</code> · ~190 frames · ~2.2s</p>
-    </section>
-
-    <section>
-      <h2>6. Vendor function overrides — DuckDB <code>DATE_DIFF</code></h2>
+    <!-- ============ SECTION 8: Vendor override (terminal) ============ -->
+    <section id="vendor">
+      <h2>8. Vendor function overrides — DuckDB <code>DATE_DIFF</code> <span class="tag term">TERMINAL</span></h2>
       <p>SQLGlot emits <code>DATE_DIFF('second', end_at, start_at)</code>
         for DuckDB — wrong arg order. SpeakSQL's vendor override flips the
         args and executes the query against a real DuckDB file.</p>
@@ -143,7 +246,7 @@
         <asciinema-player src="demo.vendor_overrides.cast" autoplay loop speed="1.5"
             cols="100" rows="28"></asciinema-player>
       </div>
-      <p class="meta"><code>docs/demo.vendor_overrides.cast</code> · ~260 frames · ~3.5s</p>
+      <p class="meta"><code>docs/demo.vendor_overrides.cast</code> · ~260 frames · ~3.6s</p>
     </section>
 
     <footer>

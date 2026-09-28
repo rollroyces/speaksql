@@ -1,0 +1,213 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpeakSQL feature poster — single-image overview showing the three
+  primary surfaces of the product: CLI, JOIN graph, WS streaming.
+  Used as the README hero and the demo.html section-1 image.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 720" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0b1020"/>
+      <stop offset="100%" stop-color="#1c2540"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#6ad4ff"/>
+      <stop offset="100%" stop-color="#a78bfa"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="720" fill="url(#bg)"/>
+
+  <!-- Title block -->
+  <text x="600" y="60" text-anchor="middle" font-size="32" font-weight="800" fill="#e8eef7">SpeakSQL</text>
+  <text x="600" y="86" text-anchor="middle" font-size="14" font-weight="500" fill="#8aa0c0">Speak once. Query any dialect.</text>
+  <line x1="500" y1="100" x2="700" y2="100" stroke="url(#accent)" stroke-width="2"/>
+
+  <!-- ===== LEFT panel: CLI ===== -->
+  <g transform="translate(40, 140)">
+    <rect width="360" height="240" rx="10" fill="#000000" stroke="#3b4870" stroke-width="1"/>
+    <circle cx="14" cy="14" r="4" fill="#ff5f57"/>
+    <circle cx="30" cy="14" r="4" fill="#febc2e"/>
+    <circle cx="46" cy="14" r="4" fill="#28c840"/>
+    <text x="180" y="18" text-anchor="middle" font-size="10" fill="#8aa0c0" font-family="ui-monospace">speaksql — ask</text>
+
+    <text x="14" y="44" font-size="11" font-family="ui-monospace" fill="#6ad4ff">$</text>
+    <text x="26" y="44" font-size="11" font-family="ui-monospace" fill="#d6ffea">echo "monthly amount by country" |</text>
+    <text x="26" y="60" font-size="11" font-family="ui-monospace" fill="#d6ffea">speaksql ask -d postgres -d bigquery</text>
+
+    <text x="14" y="92" font-size="11" font-family="ui-monospace" fill="#8aa0c0">-- postgres ---------</text>
+    <text x="14" y="110" font-size="11" font-family="ui-monospace" fill="#d6ffea">SELECT DATE_TRUNC(</text>
+    <text x="14" y="126" font-size="11" font-family="ui-monospace" fill="#d6ffea">'MONTH', created_at) AS m,</text>
+    <text x="14" y="142" font-size="11" font-family="ui-monospace" fill="#d6ffea">  country,</text>
+    <text x="14" y="158" font-size="11" font-family="ui-monospace" fill="#d6ffea">  SUM(amount) AS total</text>
+    <text x="14" y="174" font-size="11" font-family="ui-monospace" fill="#d6ffea">FROM events</text>
+    <text x="14" y="190" font-size="11" font-family="ui-monospace" fill="#d6ffea">GROUP BY m, country</text>
+
+    <text x="14" y="214" font-size="10" font-family="ui-monospace" fill="#4ade80">9 dialects. One query.</text>
+
+    <!-- Caption -->
+    <text x="180" y="260" text-anchor="middle" font-size="13" font-weight="700" fill="#6ad4ff">CLI</text>
+    <text x="180" y="278" text-anchor="middle" font-size="11" fill="#8aa0c0">ask · format · diff · graph · repl</text>
+  </g>
+
+  <!-- ===== CENTER panel: JOIN graph ===== -->
+  <g transform="translate(420, 140)">
+    <rect width="360" height="240" rx="10" fill="#f8fafc" stroke="#cbd5e1" stroke-width="1"/>
+    <text x="14" y="22" font-size="13" font-weight="700" fill="#0f172a">JOIN Graph — /tmp/sample.sqlite</text>
+    <text x="14" y="38" font-size="10" fill="#64748b">6 tables · 5 inferred joins · PK highlighted</text>
+
+    <!-- Mini graph nodes -->
+    <g transform="translate(20, 60)">
+      <rect width="80" height="36" rx="4" fill="#f1f5f9" stroke="#0f172a"/>
+      <text x="40" y="16" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">users</text>
+      <text x="40" y="28" text-anchor="middle" font-size="8" fill="#475569">3 cols · 0 join</text>
+    </g>
+    <g transform="translate(140, 60)">
+      <rect width="80" height="36" rx="4" fill="#f1f5f9" stroke="#0f172a"/>
+      <text x="40" y="16" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">orders</text>
+      <text x="40" y="28" text-anchor="middle" font-size="8" fill="#475569">5 cols · 2 join</text>
+    </g>
+    <g transform="translate(260, 60)">
+      <rect width="80" height="36" rx="4" fill="#f1f5f9" stroke="#0f172a"/>
+      <text x="40" y="16" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">order_items</text>
+      <text x="40" y="28" text-anchor="middle" font-size="8" fill="#475569">5 cols · 1 join</text>
+    </g>
+
+    <g transform="translate(20, 130)">
+      <rect width="80" height="36" rx="4" fill="#f1f5f9" stroke="#0f172a"/>
+      <text x="40" y="16" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">products</text>
+      <text x="40" y="28" text-anchor="middle" font-size="8" fill="#475569">4 cols · 1 join</text>
+    </g>
+    <g transform="translate(140, 130)">
+      <rect width="80" height="36" rx="4" fill="#f1f5f9" stroke="#0f172a"/>
+      <text x="40" y="16" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">shipments</text>
+      <text x="40" y="28" text-anchor="middle" font-size="8" fill="#475569">5 cols · 0 join</text>
+    </g>
+    <g transform="translate(260, 130)">
+      <rect width="80" height="36" rx="4" fill="#f1f5f9" stroke="#0f172a"/>
+      <text x="40" y="16" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">reviews</text>
+      <text x="40" y="28" text-anchor="middle" font-size="8" fill="#475569">5 cols · 1 join</text>
+    </g>
+
+    <!-- Edges -->
+    <line x1="100" y1="78" x2="140" y2="78" stroke="#94a3b8" stroke-width="1.5"/>
+    <line x1="220" y1="78" x2="260" y2="78" stroke="#94a3b8" stroke-width="1.5"/>
+    <line x1="220" y1="96" x2="260" y2="148" stroke="#94a3b8" stroke-width="1.5"/>
+    <line x1="180" y1="148" x2="180" y2="166" stroke="#94a3b8" stroke-width="1.5"/>
+    <line x1="100" y1="96" x2="60" y2="148" stroke="#94a3b8" stroke-width="1.5"/>
+
+    <text x="14" y="200" font-size="10" fill="#64748b">Real FK constraints preferred;</text>
+    <text x="14" y="214" font-size="10" fill="#64748b">name heuristic as fallback.</text>
+
+    <!-- Caption -->
+    <text x="180" y="260" text-anchor="middle" font-size="13" font-weight="700" fill="#6ad4ff">JOIN graph</text>
+    <text x="180" y="278" text-anchor="middle" font-size="11" fill="#8aa0c0">from any SQLite/DuckDB file</text>
+  </g>
+
+  <!-- ===== RIGHT panel: WebSocket streaming ===== -->
+  <g transform="translate(800, 140)">
+    <rect width="360" height="240" rx="10" fill="#0e0e10" stroke="#3b4870" stroke-width="1"/>
+    <text x="14" y="22" font-size="11" font-weight="700" fill="#e8eef7">SpeakSQL — WS streaming</text>
+
+    <!-- Form -->
+    <rect x="14" y="36" width="240" height="22" rx="4" fill="#1c2540" stroke="#3b4870"/>
+    <text x="22" y="51" font-size="10" fill="#d6ffea" font-family="ui-monospace">SELECT 1 AS x</text>
+    <rect x="260" y="38" width="80" height="20" rx="4" fill="#6ad4ff"/>
+    <text x="300" y="52" text-anchor="middle" font-size="10" font-weight="600" fill="#0e0e10">Ask</text>
+
+    <text x="14" y="78" font-size="9" fill="#8aa0c0">streaming…</text>
+
+    <!-- Canonical -->
+    <rect x="14" y="88" width="332" height="36" rx="4" fill="#000000"/>
+    <text x="22" y="103" font-size="10" font-family="ui-monospace" fill="#d6ffea">SELECT</text>
+    <text x="22" y="116" font-size="10" font-family="ui-monospace" fill="#d6ffea">  1 AS x</text>
+
+    <!-- Per-dialect blocks -->
+    <rect x="14" y="132" width="160" height="60" rx="4" fill="#101422" stroke="#3b4870"/>
+    <text x="22" y="146" font-size="10" font-weight="700" fill="#4ade80">postgres</text>
+    <text x="22" y="160" font-size="9" font-family="ui-monospace" fill="#d6ffea">SELECT</text>
+    <text x="22" y="172" font-size="9" font-family="ui-monospace" fill="#d6ffea">  1 AS x</text>
+    <text x="22" y="184" font-size="9" font-family="ui-monospace" fill="#d6ffea">LIMIT 100</text>
+
+    <rect x="186" y="132" width="160" height="60" rx="4" fill="#101422" stroke="#3b4870"/>
+    <text x="194" y="146" font-size="10" font-weight="700" fill="#4ade80">duckdb</text>
+    <text x="194" y="160" font-size="9" font-family="ui-monospace" fill="#d6ffea">SELECT</text>
+    <text x="194" y="172" font-size="9" font-family="ui-monospace" fill="#d6ffea">  1 AS x</text>
+    <text x="194" y="184" font-size="9" font-family="ui-monospace" fill="#d6ffea">LIMIT 100</text>
+
+    <!-- Frames note -->
+    <text x="14" y="216" font-size="10" font-family="ui-monospace" fill="#8aa0c0">{"type":"transpile",</text>
+    <text x="14" y="230" font-size="10" font-family="ui-monospace" fill="#8aa0c0"> "dialect":"postgres","sql":"..."}</text>
+
+    <!-- Caption -->
+    <text x="180" y="260" text-anchor="middle" font-size="13" font-weight="700" fill="#6ad4ff">WebSocket streaming</text>
+    <text x="180" y="278" text-anchor="middle" font-size="11" fill="#8aa0c0">ws_demo.html · /v1/ask</text>
+  </g>
+
+  <!-- ===== BOTTOM panel: dialect fan-out ===== -->
+  <g transform="translate(40, 460)">
+    <rect width="1120" height="200" rx="10" fill="#0b1020" stroke="#3b4870" stroke-width="1"/>
+    <text x="20" y="28" font-size="13" font-weight="700" fill="#6ad4ff">9 dialects · 8 live backends</text>
+
+    <!-- Source node -->
+    <rect x="40" y="80" width="140" height="40" rx="6" fill="#fef3c7" stroke="#92400e"/>
+    <text x="110" y="100" text-anchor="middle" font-size="11" font-weight="700" fill="#451a03">canonical ANSI</text>
+    <text x="110" y="114" text-anchor="middle" font-size="9" fill="#451a03">DATE_TRUNC · SUM · LIMIT</text>
+
+    <!-- Target dialect chips -->
+    <g transform="translate(220, 60)">
+      <rect width="100" height="26" rx="4" fill="#dbeafe" stroke="#1e3a8a"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#1e3a8a">postgres</text>
+    </g>
+    <g transform="translate(330, 60)">
+      <rect width="100" height="26" rx="4" fill="#e0f2fe" stroke="#0c4a6e"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#0c4a6e">bigquery</text>
+    </g>
+    <g transform="translate(440, 60)">
+      <rect width="100" height="26" rx="4" fill="#fee2e2" stroke="#7f1d1d"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#7f1d1d">spark</text>
+    </g>
+    <g transform="translate(550, 60)">
+      <rect width="100" height="26" rx="4" fill="#f3e8ff" stroke="#581c87"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#581c87">mysql</text>
+    </g>
+    <g transform="translate(660, 60)">
+      <rect width="100" height="26" rx="4" fill="#dcfce7" stroke="#166534"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#166534">duckdb</text>
+    </g>
+    <g transform="translate(770, 60)">
+      <rect width="100" height="26" rx="4" fill="#fce7f3" stroke="#9d174d"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#9d174d">tsql</text>
+    </g>
+    <g transform="translate(880, 60)">
+      <rect width="100" height="26" rx="4" fill="#fff7ed" stroke="#9a3412"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#9a3412">snowflake</text>
+    </g>
+    <g transform="translate(990, 60)">
+      <rect width="100" height="26" rx="4" fill="#f1f5f9" stroke="#0f172a"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#0f172a">hana</text>
+    </g>
+
+    <!-- Lines from source to chips -->
+    <line x1="180" y1="100" x2="220" y2="73" stroke="#3b4870" stroke-width="1"/>
+    <line x1="180" y1="100" x2="330" y2="73" stroke="#3b4870" stroke-width="1"/>
+    <line x1="180" y1="100" x2="440" y2="73" stroke="#3b4870" stroke-width="1"/>
+    <line x1="180" y1="100" x2="550" y2="73" stroke="#3b4870" stroke-width="1"/>
+    <line x1="180" y1="100" x2="660" y2="73" stroke="#3b4870" stroke-width="1"/>
+    <line x1="180" y1="100" x2="770" y2="73" stroke="#3b4870" stroke-width="1"/>
+    <line x1="180" y1="100" x2="880" y2="73" stroke="#3b4870" stroke-width="1"/>
+    <line x1="180" y1="100" x2="990" y2="73" stroke="#3b4870" stroke-width="1"/>
+
+    <!-- Bottom row chips -->
+    <g transform="translate(220, 110)">
+      <rect width="100" height="26" rx="4" fill="#f1f5f9" stroke="#475569"/>
+      <text x="50" y="17" text-anchor="middle" font-size="10" font-weight="600" fill="#1f2937">sqlite</text>
+    </g>
+    <text x="50" y="160" font-size="11" fill="#8aa0c0">One canonical source → every dialect, with vendor-specific fixups applied automatically.</text>
+    <text x="50" y="180" font-size="11" fill="#8aa0c0">Built on SQLGlot. Adds NL→SQL with example retrieval, FK-aware planning, semantic diff.</text>
+  </g>
+
+  <!-- Footer -->
+  <text x="600" y="700" text-anchor="middle" font-size="11" fill="#8aa0c0">github.com/rollroyces/speaksql · AGPL-3.0 · 292 tests green</text>
+</svg>
