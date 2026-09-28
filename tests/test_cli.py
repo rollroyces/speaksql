@@ -41,6 +41,24 @@ def test_cli_ask_json():
     assert "postgres" in parsed["results"]
 
 
+def test_cli_ask_advanced_flag_runs_planner():
+    """`--advanced` must not break the SQL pipeline (rule layer still fires)."""
+    r = CliRunner().invoke(
+        main, ["ask", "-d", "postgres", "--advanced", "--sql", "SELECT 1 AS x"]
+    )
+    assert r.exit_code == 0
+    assert "SELECT" in r.output.upper()
+
+
+def test_cli_ask_no_advanced_flag_default():
+    """The default (`--no-advanced`) must not break the SQL pipeline."""
+    r = CliRunner().invoke(
+        main, ["ask", "-d", "postgres", "--no-advanced", "--sql", "SELECT 1 AS x"]
+    )
+    assert r.exit_code == 0
+    assert "SELECT" in r.output.upper()
+
+
 def test_cli_missing_question_errors():
     r = CliRunner().invoke(main, ["ask"])
     assert r.exit_code != 0

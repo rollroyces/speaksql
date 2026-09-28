@@ -12,12 +12,14 @@ via the ~30-line <asciinema-player> widget bundled in `docs/player.js`.
 Usage:
     python scripts/record_demo.py <output.cast> <script_name>
 
-The script_name chooses which demo to record:
-    - demo:    one-shot NL → multi-dialect transpile + format
-    - format:  three format examples (compact, pretty, cross-dialect)
-    - repl:    interactive REPL with :dialects switching
-    - diff:    semantic diff in human-readable + JSON
-    - graph:   JOIN graph CLI
+The script_name chooses which demo to record. Available scripts:
+
+    - demo            — NL → 3 dialects + format (the headline pitch)
+    - format          — pretty / compact / cross-dialect canonicalize
+    - repl            — interactive REPL with :dialects switching
+    - diff            — semantic diff in human-readable + JSON
+    - graph           — JOIN graph CLI on a SQLite DB
+    - vendor_overrides — DuckDB DATEDIFF fix (per-dialect function override)
 """
 
 from __future__ import annotations
@@ -91,7 +93,36 @@ COMMANDS_BY_NAME: dict[str, list[tuple[str, str]]] = {
         ),
     ],
     "graph": [
-        (".venv/bin/speaksql graph --help 2>&1 | head -8", "JOIN graph CLI."),
+        (
+            ".venv/bin/speaksql graph /tmp/sample.sqlite --json 2>&1 | head -20",
+            "JOIN graph CLI — JSON dump of nodes + edges.",
+        ),
+        (
+            ".venv/bin/speaksql graph /tmp/sample.sqlite --html /tmp/graph.html 2>&1",
+            "Render the same graph as an interactive HTML page.",
+        ),
+    ],
+    "vendor_overrides": [
+        (
+            ".venv/bin/speaksql format --target duckdb " +
+            "'SELECT DATE_DIFF('\\''second'\\'', end_at, start_at) AS elapsed " +
+            "FROM events' 2>&1",
+            "Raw SQLGlot emit — DuckDB's DATE_DIFF args are reversed.",
+        ),
+        (
+            ".venv/bin/python -c \"import duckdb; con = duckdb.connect('/tmp/events.duck'); " +
+            "con.execute('CREATE TABLE events (start_at TIMESTAMP, end_at TIMESTAMP)'); " +
+            "con.execute(\\\"INSERT INTO events VALUES (TIMESTAMP '2026-01-15 10:00:00', TIMESTAMP '2026-01-22 10:00:00')\\\"); " +
+            "con.execute(\\\"INSERT INTO events VALUES (TIMESTAMP '2026-02-01 09:00:00', TIMESTAMP '2026-02-08 09:00:00')\\\"); " +
+            "print('seeded', con.execute('SELECT COUNT(*) FROM events').fetchone()[0], 'rows')\" 2>&1",
+            "Seed a DuckDB file with two timestamped rows.",
+        ),
+        (
+            "echo \"SELECT DATE_DIFF('second', end_at, start_at) AS elapsed FROM events\" " +
+            "| .venv/bin/speaksql ask --sql --dialect duckdb --execute-on duckdb " +
+            "--db-path /tmp/events.duck 2>&1 | tail -15",
+            "Vendor override flips the args AND runs the query on DuckDB.",
+        ),
     ],
 }
 
@@ -201,11 +232,76 @@ def _record_one(name: str, commands: list[tuple[str, str]]) -> tuple[int, list]:
     return len(events), events
 
 
+def _seed_sample_sqlite() -> None:
+    """Seed /tmp/sample.sqlite with a 4-table FK schema used by `graph` demo."""
+    import sqlite3
+
+    db = "/tmp/sample.sqlite"
+    con = sqlite3.connect(db)
+    con.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY, email TEXT NOT NULL, created_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS orders (
+            id INTEGER PRIMARY KEY, user_id INTEGER, amount REAL, status TEXT,
+            created_at TEXT, FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+        CREATE TABLE IF NOT EXISTS order_items (
+            id INTEGER PRIMARY KEY, order_id INTEGER, sku TEXT, qty INTEGER,
+            price REAL, FOREIGN KEY(order_id) REFERENCES orders(id)
+        );
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY, sku TEXT UNIQUE, name TEXT, price REAL
+        );
+        """
+    )
+    con.close()
+
+
+def _seed_events_duckdb() -> None:
+    """Seed /tmp/events.duck with a 2-row events table used by
+    `vendor_overrides` demo. Re-creates on each call."""
+    import os
+
+    import duckdb  # type: ignore[import-not-found]  # scripts/ outside src/
+
+    db = "/tmp/events.duck"
+    # Remove any pre-existing file so we always start from a clean schema.
+    # DuckDB's `CREATE TABLE IF NOT EXISTS` would silently skip the recreate
+    # which leaves stale rows in a previously-recorded session.
+    if os.path.exists(db):
+        os.unlink(db)
+    con = duckdb.connect(db)
+    con.execute(
+        "CREATE TABLE events (start_at TIMESTAMP, end_at TIMESTAMP)"
+    )
+    con.execute(
+        "INSERT INTO events VALUES "
+        "(TIMESTAMP '2026-01-15 10:00:00', TIMESTAMP '2026-01-22 10:00:00'),"
+        " (TIMESTAMP '2026-02-01 09:00:00', TIMESTAMP '2026-02-08 09:00:00')"
+    )
+    con.close()
+
+
+# Some demos need fixture DBs to be present before recording.
+# This runs the seed before the recording starts so the demo captures
+# the right output.
+_PRE_RECORD_HOOKS = {
+    "graph": [_seed_sample_sqlite],
+    "vendor_overrides": [_seed_events_duckdb],
+}
+
+
 def record(name: str, script_file: str | Path) -> None:
     commands = COMMANDS_BY_NAME.get(name)
     if not commands:
         print(f"No script named {name!r}. Options: {list(COMMANDS_BY_NAME)}")
         sys.exit(1)
+
+    # Run any pre-record hooks (seed fixture DBs etc.)
+    for hook in _PRE_RECORD_HOOKS.get(name, []):
+        hook()
 
     n_frames, events = _record_one(name, commands)
 

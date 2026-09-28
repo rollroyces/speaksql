@@ -1,0 +1,12 @@
+{"version": 2, "width": 100, "height": 28, "timestamp": 1790599733, "env": {"TERM": "xterm-256color", "SHELL": "/bin/bash"}, "title": "SpeakSQL \u2014 graph"}
+[0.0, "o", "\u001b[H\u001b[2J"]
+[0.0, "o", "\u001b[?25l"]
+[0.0, "o", "\u001b[1;36mSpeakSQL \u2014 graph\u001b[0m  \u001b[2m# recorded demo\u001b[0m\n"]
+[0.528, "o", "\u001b[2m# JOIN graph CLI \u2014 JSON dump of nodes + edges.\u001b[0m\n"]
+[0.528, "o", "\u001b[1;32m$\u001b[0m .venv/bin/speaksql graph /tmp/sample.sqlite --json 2>&1 | head -20\n"]
+[0.591, "o", "{\n  \"nodes\": [\n    {\n      \"name\": \"users\",\n      \"schema\": null,\n      \"catalog\": null,\n      \"columns\": [\n        {\n          \"name\": \"id\",\n          \"data_type\": \"INTEGER\",\n          \"is_primary_key\": true,\n          \"nullable\": true\n        },\n        {\n          \"name\": \"email\",\n          \"data_type\": \"TEXT\",\n          \"is_primary_key\": false,\n          \"nullable\": false\n        },\n        {\n"]
+[0.603, "o", "$ "]
+[1.929, "o", "\u001b[2m# Render the same graph as an interactive HTML page.\u001b[0m\n"]
+[1.929, "o", "\u001b[1;32m$\u001b[0m .venv/bin/speaksql graph /tmp/sample.sqlite --html /tmp/graph.html 2>&1\n"]
+[1.991, "o", "wrote /tmp/graph.html\n"]
+[2.003, "o", "$ "]

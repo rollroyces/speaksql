@@ -47,6 +47,7 @@ def nl_to_canonical(
     *,
     instructions: str | None = None,
     examples: Sequence[tuple[str, str]] | None = None,
+    advanced: bool = False,
 ) -> str:
     """Translate a natural-language question into a canonical SQL string.
 
@@ -58,9 +59,10 @@ def nl_to_canonical(
     2. Rule-based patterns (`count of X`, `top N X by Y`, `monthly X by Y`)
        match. The default table is the top-ranked table from the schema
        hint (when present), or `events`.
-    3. If `SPEAKSQL_USE_LLM=1` is set AND no rule matched, falls back to
-       the LLM planner. If disabled, returns a syntactically valid
-       placeholder SQL with the question preserved as a comment.
+    3. If `advanced=True` (and LLM is available), run the multi-step
+       state-machine planner. Otherwise fall back to the single-pass
+       `llm_to_canonical`. Returns a syntactically valid placeholder
+       SQL with the question preserved as a comment if nothing matched.
 
     Honest about what it handles — never fabricates a meaningful SQL
     query from an ambiguous question.
@@ -111,6 +113,26 @@ def nl_to_canonical(
         is_llm_enabled = lambda: False
         llm_to_canonical = None  # type: ignore[assignment]
     if is_llm_enabled() and llm_to_canonical is not None:
+        if advanced:
+            try:
+                from speaksql.planner import run_planner
+
+                result = run_planner(
+                    q,
+                    schema=schema if isinstance(schema, SchemaList) else None,
+                    advanced=True,
+                    instructions=instructions,
+                    examples=examples,
+                    schema_hint=schema_hint_text or None,
+                )
+                return result.state.canonical_sql
+            except Exception as e:  # noqa: BLE001
+                # Planner failed — fall through to single-pass LLM.
+                import logging
+
+                logging.getLogger(__name__).debug(
+                    "Advanced planner failed: %s", e
+                )
         try:
             return llm_to_canonical(
                 q,

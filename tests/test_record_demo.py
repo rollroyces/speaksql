@@ -22,7 +22,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS_DIR = REPO_ROOT / "scripts"
 DOCS_DIR = REPO_ROOT / "docs"
 
-DEMO_NAMES = ["demo", "format", "repl", "diff", "graph"]
+DEMO_NAMES = ["demo", "format", "repl", "diff", "graph", "vendor_overrides"]
 
 
 def _validate_cast(path: Path) -> tuple[dict, list]:

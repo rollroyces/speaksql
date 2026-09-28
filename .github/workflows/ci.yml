@@ -52,7 +52,7 @@ jobs:
       - name: Re-record the demos
         run: |
           mkdir -p docs
-          for name in demo format repl diff; do
+          for name in demo format repl diff graph vendor_overrides; do
             out="docs/demo${name:+.$name}.cast"
             [ "$name" = "demo" ] && out="docs/demo.cast"
             uv run --python 3.12 python scripts/record_demo.py "$out" "$name"
@@ -68,6 +68,8 @@ jobs:
             docs/demo.format.cast
             docs/demo.diff.cast
             docs/demo.repl.cast
+            docs/demo.graph.cast
+            docs/demo.vendor_overrides.cast
             docs/demo.html
             docs/demo.svg
             docs/static/

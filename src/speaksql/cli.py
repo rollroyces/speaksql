@@ -89,6 +89,17 @@ def main() -> None:
         "as few-shot examples into the LLM system prompt."
     ),
 )
+@click.option(
+    "--advanced/--no-advanced",
+    "advanced",
+    default=False,
+    help=(
+        "Use the multi-step state-machine planner (IdentifyTables -> "
+        "IdentifyColumns -> GenerateSQL -> SyntacticValidate -> "
+        "BusinessValidate) instead of the single-pass LLM call. Slower "
+        "but more accurate on ambiguous NL questions."
+    ),
+)
 def ask(
     question: str | None,
     dialects: tuple[str, ...],
@@ -98,6 +109,7 @@ def ask(
     db_path: str | None,
     instructions_path: Path | None,
     examples_path: Path | None,
+    advanced: bool,
 ) -> None:
     """Translate QUESTION (NL or canonical SQL) into target-dialect SQL.
 
@@ -138,6 +150,7 @@ def ask(
         schema=schema,
         instructions=instructions,
         examples=examples,
+        advanced=advanced,
     )
     targets: Iterable[str] = dialects or sorted(SUPPORTED_DIALECTS)
     out = transpile(canonical, targets)

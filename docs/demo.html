@@ -120,14 +120,38 @@
         <asciinema-player src="demo.diff.cast" autoplay loop speed="1.5"
             cols="100" rows="28"></asciinema-player>
       </div>
-      <p class="meta"><code>docs/demo.diff.cast</code> · 158 frames · ~1.5s</p>
+      <p class="meta"><code>docs/demo.diff.cast</code> · ~158 frames · ~2.1s</p>
+    </section>
+
+    <section>
+      <h2>5. <code>speaksql graph</code> — JOIN graph from a SQLite DB</h2>
+      <p>Introspect the schema + declared FKs, emit the join graph as JSON
+        or as an interactive HTML visualization.</p>
+      <div class="player">
+        <asciinema-player src="demo.graph.cast" autoplay loop speed="1.5"
+            cols="100" rows="28"></asciinema-player>
+      </div>
+      <p class="meta"><code>docs/demo.graph.cast</code> · ~190 frames · ~2.2s</p>
+    </section>
+
+    <section>
+      <h2>6. Vendor function overrides — DuckDB <code>DATE_DIFF</code></h2>
+      <p>SQLGlot emits <code>DATE_DIFF('second', end_at, start_at)</code>
+        for DuckDB — wrong arg order. SpeakSQL's vendor override flips the
+        args and executes the query against a real DuckDB file.</p>
+      <div class="player">
+        <asciinema-player src="demo.vendor_overrides.cast" autoplay loop speed="1.5"
+            cols="100" rows="28"></asciinema-player>
+      </div>
+      <p class="meta"><code>docs/demo.vendor_overrides.cast</code> · ~260 frames · ~3.5s</p>
     </section>
 
     <footer>
       <p>Record your own with
-        <code>uv run python scripts/record_demo.py &lt;out.cast&gt; &lt;name&gt;</code>.
-        Five demo scripts live there: <code>demo</code>, <code>format</code>,
-        <code>repl</code>, <code>diff</code>, <code>graph</code>.</p>
+        <code>uv run python scripts/record_demo.py <out.cast> <name></code>.
+        Six demo scripts live there: <code>demo</code>, <code>format</code>,
+        <code>repl</code>, <code>diff</code>, <code>graph</code>,
+        <code>vendor_overrides</code>.</p>
       <p><a href="https://github.com/rollroyces/speaksql">github.com/rollroyces/speaksql</a></p>
     </footer>
   </main>
