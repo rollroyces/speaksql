@@ -62,6 +62,7 @@ jobs:
       - name: Upload recordings as artifacts
         uses: actions/upload-artifact@v4
         with:
+          retention-days: 7
           name: speaksql-demo-recordings
           path: |
             docs/demo.cast
